@@ -12,6 +12,8 @@ samsung-watch7:
     - WATCH7_DEVICE_TOKEN
     # Explicitly disabled on Bumi until a separate actuator safety acceptance.
     - WATCH7_HAPTIC_ACTIONS_ENABLED=0
+    # Research metadata indexing stays off until separate review/consent.
+    - WATCH7_RECORDING_INDEX_ENABLED=0
   logging:
     driver: local
     options:

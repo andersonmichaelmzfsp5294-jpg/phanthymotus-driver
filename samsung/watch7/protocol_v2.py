@@ -169,6 +169,10 @@ def validate_v2(raw: Any, *, now_ms: int | None = None) -> tuple[str, dict]:
             if type(raw["haptic_enabled"]) is not bool:
                 raise ValueError("invalid haptic consent")
             cleaned["haptic_enabled"] = raw["haptic_enabled"]
+        if "recording_manifest_enabled" in raw:
+            if type(raw["recording_manifest_enabled"]) is not bool:
+                raise ValueError("invalid recording manifest opt-in")
+            cleaned["recording_manifest_enabled"] = raw["recording_manifest_enabled"]
         if "charging" in raw:
             if type(raw["charging"]) is not bool:
                 raise ValueError("invalid charging state")

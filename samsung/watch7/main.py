@@ -111,12 +111,14 @@ def run() -> None:
     plugins: dict[str, object] = {}
 
     def publish_metrics(sample: dict) -> None:
-        for name in ("watch_motion", "watch_environment"):
+        for name in ("watch_motion", "watch_environment", "watch_vitals"):
             plugin = plugins.get(name)
             if plugin is not None:
                 plugin.publish(sample)
 
     device = DeviceStore(
+        allow_recording_manifests=os.environ.get("WATCH7_RECORDING_INDEX_ENABLED") == "1",
+        on_manifest=lambda frame: plugins.get("watch_recordings") and plugins["watch_recordings"].publish(frame),
         on_heart=lambda sample: plugins.get("heart_rate") and plugins["heart_rate"].publish(sample),
         on_device=lambda sample: plugins.get("device_state") and plugins["device_state"].publish(sample),
         on_metrics=publish_metrics,

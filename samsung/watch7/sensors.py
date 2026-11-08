@@ -87,6 +87,14 @@ def build_plugins(device, namespace: str, publish_factory, config: dict,
         from environment import EnvironmentPlugin
         topic = f"/{namespace}/watch7/environment"
         plugins.append(EnvironmentPlugin(device, topic, publish_factory(topic)))
+    if enabled.get("watch_vitals", {}).get("enabled", False):
+        from vitals import VitalsPlugin
+        topic = f"/{namespace}/watch7/vitals"
+        plugins.append(VitalsPlugin(device, topic, publish_factory(topic)))
+    if enabled.get("watch_recordings", {}).get("enabled", False):
+        from recordings import RecordingsPlugin
+        topic = f"/{namespace}/watch7/recordings"
+        plugins.append(RecordingsPlugin(device, topic, publish_factory(topic)))
     if enabled.get("watch_haptic", {}).get("enabled", False) and haptic_queue is not None:
         from haptics import HapticPlugin
         topic = f"/{namespace}/watch7/haptic_acks"

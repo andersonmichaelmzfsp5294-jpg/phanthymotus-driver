@@ -15,6 +15,9 @@ from protocol_v2 import validate_v2
 
 MAX_AGE_MS = 15_000
 MAX_SEQUENCES = 128
+MAX_RECORDINGS = 32
+RECORDING_RETENTION_MS = 10 * 60 * 1000
+ALLOWED_RECORDING_SIGNALS = frozenset(("ppg_green", "ppg_red", "ppg_ir"))
 
 
 class DeviceStore:
@@ -24,6 +27,8 @@ class DeviceStore:
         on_heart: Callable[[dict], None] | None = None,
         on_device: Callable[[dict], None] | None = None,
         on_metrics: Callable[[dict], None] | None = None,
+        on_manifest: Callable[[dict], None] | None = None,
+        allow_recording_manifests: bool = False,
         allow_simulated: bool = False,
         wall_ms: Callable[[], int] | None = None,
         monotonic_ms: Callable[[], int] | None = None,
@@ -35,6 +40,9 @@ class DeviceStore:
         self._on_heart = on_heart or (lambda payload: None)
         self._on_device = on_device or (lambda payload: None)
         self._on_metrics = on_metrics or (lambda payload: None)
+        self._on_manifest = on_manifest or (lambda payload: None)
+        self._allow_recording_manifests = allow_recording_manifests
+        self._recordings: OrderedDict[tuple[str, str, str], tuple[dict, int]] = OrderedDict()
         self._seq: OrderedDict[tuple, int] = OrderedDict()
         self._v1: tuple[dict, int] | None = None
         self._v2_heart: tuple[dict, int] | None = None
@@ -93,7 +101,10 @@ class DeviceStore:
             return {"ok": False, "reason": "bad_input", "detail": str(exc)}
         if clean["source"] != "watch7_real" and not self._allow_simulated:
             return {"ok": False, "reason": "simulated_disabled"}
-        # Waveform transfer/indexing is deferred to a later, separately reviewed PR.
+        # Only a small, explicitly opted-in *index* of on-watch PPG
+        # recordings is permitted. No waveform data is transmitted here.
+        if clean["kind"] == "signal_manifest":
+            return self._ingest_manifest(clean)
         if clean["kind"] not in {"summary", "device_state"}:
             return {"ok": False, "reason": "kind_not_enabled"}
         event_type = None
@@ -105,6 +116,15 @@ class DeviceStore:
                 return {"ok": False, "reason": "duplicate_or_out_of_order"}
             arrival = self._mono()
             if clean["kind"] == "device_state":
+                # Opt-out, off-wrist, stopped collection or a new session must
+                # erase the in-memory research index immediately; re-consent
+                # cannot resurrect previously disclosed manifests.
+                if (self._state is not None
+                        and self._state[0]["session_id"] != clean["session_id"]
+                        or clean.get("recording_manifest_enabled") is not True
+                        or clean["wear_state"] != "on_body"
+                        or not clean["online"] or not clean["collecting"]):
+                    self._recordings.clear()
                 self._state = (dict(clean), arrival)
                 event_type = "device"
                 event = {
@@ -148,6 +168,75 @@ class DeviceStore:
             self._on_metrics(metrics_event)
         return {"ok": True, "kind": clean["kind"], "seq": clean["seq"]}
 
+    def _recording_gate_locked(self) -> dict:
+        if not self._allow_recording_manifests:
+            return {"ok": False, "reason": "operator_disabled"}
+        if not self._is_fresh(self._state):
+            return {"ok": False, "reason": "device_state_unavailable"}
+        heartbeat = self._state[0]
+        if (heartbeat["source"] != "watch7_real" or not heartbeat["online"]
+                or not heartbeat["collecting"] or heartbeat["wear_state"] != "on_body"):
+            return {"ok": False, "reason": "device_not_ready"}
+        if heartbeat.get("recording_manifest_enabled") is not True:
+            return {"ok": False, "reason": "watch_recording_consent_required"}
+        return {"ok": True, "session_id": heartbeat["session_id"]}
+
+    def _prune_recordings_locked(self) -> None:
+        current = self._mono()
+        for key, (_, received) in list(self._recordings.items()):
+            if not 0 <= current - received <= RECORDING_RETENTION_MS:
+                self._recordings.pop(key, None)
+
+    def _ingest_manifest(self, frame: dict) -> dict:
+        if frame["signal"] not in ALLOWED_RECORDING_SIGNALS:
+            # ECG and other high-risk recordings need their own consent model.
+            return {"ok": False, "reason": "signal_not_enabled"}
+        if frame["sample_count"] <= 0:
+            return {"ok": False, "reason": "empty_recording"}
+        with self._lock:
+            gate = self._recording_gate_locked()
+            if not gate.get("ok"):
+                return gate
+            if (frame["session_id"] != gate["session_id"]
+                    or frame["wear_state"] != "on_body"):
+                return {"ok": False, "reason": "session_or_wear_mismatch"}
+            key = ("v2", frame["device_id"], frame["session_id"], "signal_manifest")
+            if not self._accept_seq(key, frame["seq"]):
+                return {"ok": False, "reason": "duplicate_or_out_of_order"}
+            self._prune_recordings_locked()
+            ident = (frame["session_id"], frame["recording_id"], frame["signal"])
+            # Report-only metadata: actual waveforms stay in Watch private storage.
+            self._recordings[ident] = (dict(frame), self._mono())
+            self._recordings.move_to_end(ident)
+            while len(self._recordings) > MAX_RECORDINGS:
+                self._recordings.popitem(last=False)
+        self._on_manifest(dict(frame))
+        return {"ok": True, "kind": "signal_manifest", "seq": frame["seq"]}
+
+    def recordings_snapshot(self) -> dict:
+        with self._lock:
+            gate = self._recording_gate_locked()
+            if not gate.get("ok"):
+                return gate
+            self._prune_recordings_locked()
+            session = gate["session_id"]
+            rows = []
+            for (item_session, _, _), (frame, _) in self._recordings.items():
+                if item_session == session:
+                    rows.append({
+                        "recording_id": frame["recording_id"],
+                        "signal": frame["signal"],
+                        "sample_count": frame["sample_count"],
+                        "sample_rate_hz": frame["sample_rate_hz"],
+                        "stored_on_watch": True,
+                        "captured_at_ms": frame["captured_at_ms"],
+                    })
+            return {
+                "ok": True, "source": "watch7_real", "session_id": session,
+                "recordings": rows[-MAX_RECORDINGS:],
+                "raw_data_transferred": False,
+            }
+
     @staticmethod
     def _metric_names() -> tuple[str, ...]:
         return (
@@ -155,7 +244,7 @@ class DeviceStore:
             "gyro_uncalibrated_rad_s", "magnetic_field_uT", "rotation_vector",
             "game_rotation_vector", "linear_accel_m_s2", "gravity_m_s2",
             "geomagnetic_rotation_vector", "pressure_hpa", "light_lux",
-            "step_count",
+            "step_count", "ibi_ms", "spo2_pct", "skin_temperature_c",
         )
 
     def metric_snapshot(self, name: str) -> dict:
@@ -187,10 +276,18 @@ class DeviceStore:
             sensor_age = metric.get("age_ms", MAX_AGE_MS + 1) + age_since_arrival
             if sensor_age > MAX_AGE_MS:
                 return {"ok": False, "reason": "stale_or_simulated"}
-            if (name == "heart_rate_bpm"
-                    and (frame.get("wear_state") == "off_body"
-                         or self._blocked_by_wear(frame["session_id"]))):
-                return {"ok": False, "reason": "off_body"}
+            # Advanced physiology is never considered valid off wrist, nor
+            # when the currently live heartbeat says wear state is unknown.
+            # The active heartbeat takes precedence over older summary wear.
+            if name in {"heart_rate_bpm", "ibi_ms", "spo2_pct", "skin_temperature_c"}:
+                if (frame.get("wear_state") != "on_body"
+                        or state.get("wear_state") != "on_body"):
+                    return {"ok": False, "reason": "not_worn"}
+            if name in {"ibi_ms", "spo2_pct", "skin_temperature_c"}:
+                # These metrics are not produced by the Standard APK.
+                # Do not expose substitute Android/system values as SDK data.
+                if metric.get("provider") != "samsung_sdk":
+                    return {"ok": False, "reason": "provider_not_supported"}
             return {
                 "ok": True, "metric": name, "value": metric["value"],
                 "unit": metric["unit"], "quality": metric["quality"],
@@ -232,6 +329,21 @@ class DeviceStore:
                              "hardware": "device_dependent"},
             "light_lux": {"provider": "android_sensor", "integrated": True,
                           "hardware": "device_dependent"},
+            "ibi_ms": {
+                "provider": "samsung_sdk", "driver_contract_ready": True,
+                "companion_integrated": False,
+                "requires": "research_sdk_manual_measurement",
+            },
+            "spo2_pct": {
+                "provider": "samsung_sdk", "driver_contract_ready": True,
+                "companion_integrated": False,
+                "requires": "research_sdk_manual_measurement",
+            },
+            "skin_temperature_c": {
+                "provider": "samsung_sdk", "driver_contract_ready": True,
+                "companion_integrated": False,
+                "requires": "research_sdk_manual_measurement",
+            },
         }
 
     def haptic_gate(self) -> dict:

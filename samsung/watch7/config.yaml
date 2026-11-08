@@ -12,5 +12,9 @@ plugins:
     enabled: true
   watch_environment:
     enabled: true
+  watch_vitals:
+    enabled: true
+  watch_recordings:
+    enabled: true
   watch_haptic:
     enabled: true

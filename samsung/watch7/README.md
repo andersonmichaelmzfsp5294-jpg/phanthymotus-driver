@@ -9,15 +9,20 @@ adds the read-only `watch_motion` Sensor. The **second**, dependent
 follow-up `feat/watch7-environment-cards`, adds `watch_environment`
 and a shared read-only metric Card adapter. The third follow-up,
 `feat/watch7-haptic-card`, adds a strictly gated `watch_haptic` Actuator.
+This further **dependent** personal-Fork branch,
+`feat/watch7-vitals-and-recordings`, adds `watch_vitals` (SDK scalar
+summaries) and `watch_recordings` (PPG manifests only).
 None of these changes are part of company PR #500.
 
-The four Sensor Cards use `std_msgs/String` JSON on ROS2 domain 42 with
+The six Sensor Cards use `std_msgs/String` JSON on ROS2 domain 42 with
 `data/json`:
 
 - `/{ros_namespace}/watch7/heart_rate`
 - `/{ros_namespace}/watch7/device_state`
 - `/{ros_namespace}/watch7/motion`
 - `/{ros_namespace}/watch7/environment`
+- `/{ros_namespace}/watch7/vitals` (SDK summary values only)
+- `/{ros_namespace}/watch7/recordings` (PPG metadata only, opt-in)
 
 The ROS namespace defaults to the sanitized hostname. All Sensor `start`
 and `stop` actions **only gate ROS2 publication in the Driver**; they do not
@@ -63,10 +68,11 @@ merely to perform a local acceptance test. For no-push S5 tests, use the
 adjacent project's `scripts/s5_build_local.py` (Docker Buildx `--load`);
 the ARM64 build has passed against the company's ROS base image.
 
-Its Driver image contains Python, ROS2, the four read-only Sensor
-Card plugins and the opt-in `watch_haptic` Actuator. The feature
-branches add `motion.py`, `environment.py`, `metric_cards.py`
-and `haptics.py` without adding apt/pip dependencies.
+Its Driver image contains Python, ROS2, the six Sensor Card plugins
+and the opt-in `watch_haptic` Actuator. Dependent feature branches
+add `motion.py`, `environment.py`, `metric_cards.py`,
+`vitals.py`, `recordings.py` and `haptics.py` without
+adding apt/pip dependencies.
 There is no Android SDK or Samsung proprietary SDK inside the Docker image.
 The host needs the company's `/opt/phanthy-motus/dds-local.xml` loopback
 DDS profile, ROS domain 42 and host network mode.
@@ -91,6 +97,53 @@ license terms are not substitutes for an approved production distribution.
 python3 -m pytest samsung/watch7/tests -q
 python3 scripts/check_service_yml.py samsung/watch7
 ```
+
+### `watch_vitals` contract — SDK summaries
+
+Read-only Sensor Card; actions: `info`, `capabilities`,
+`read(metric)`, `start`, `stop`.
+Supported v2 scalar summaries: `ibi_ms` (ms), `spo2_pct` (%),
+`skin_temperature_c` (degC). The Card never returns ECG, raw PPG,
+IBI time series, or any derived clinical interpretation. Heart rate
+continues to use the existing `heart_rate` Card rather than duplicating
+a second heart-rate source.
+
+This is a **Driver contract integration only**: the Standard companion
+does not produce those SDK signals, and the Research companion still
+requires separate licensed SDK source integration to emit the matching
+`v2/telemetry` summary values. The static capabilities response
+explicitly reports `companion_integrated=false`; a successful synthetic
+test is **not** real Samsung measurement validation.
+
+The Driver accepts these summaries only from real Watch7 traffic
+with a fresh same-session collecting/on-body heartbeat, quality `valid`,
+an age of at most 15 seconds, and provider `samsung_sdk`. Missing,
+unsupported or stale values return structured errors; nothing is
+fabricated. These are research observations, **not medical diagnoses**.
+
+### `watch_recordings` contract — PPG metadata only
+
+Read-only Sensor Card; actions: `info`, `list`, `start`, `stop`.
+Supports `signal_manifest` for `ppg_green`, `ppg_red`, `ppg_ir`.
+Only `recording_id`, `signal`, `sample_count`,
+`sample_rate_hz`, `stored_on_watch=true`, session and timestamps
+are indexed (32-entry in-memory bound, 10-minute retention).
+**No waveform samples, files, ECG or wearable recordings are downloaded.**
+
+The API requires **two independent gates**: a deployment operator must
+explicitly enable `WATCH7_RECORDING_INDEX_ENABLED=1` and a compatible
+research companion must report `recording_manifest_enabled=true`
+in a fresh, real, on-body v2 heartbeat. The company service YAML
+fixes the operator flag to `0`. On current Standard/Research source
+the new Watch flag is not emitted, so the index remains unavailable
+until separately implemented with explicit user UI consent. Revoking
+consent, stopping collection, removing the Watch or changing session
+clears the index. Publishing always re-checks the live gate.
+
+Research companion SDK binaries, recording contents, health secrets
+and private signing material are **never** part of this Driver branch.
+Actual PPG capture, UX consent, E2E upload, ROS2 and Bumi validation
+are future tasks, not claimed as already verified.
 
 ### `watch_haptic` contract — third follow-up
 
@@ -198,7 +251,8 @@ acceptance.
 
 - Remote sampling start/stop/configure; task-bound haptic authorization
 - Task proposals, consent/revocation, TTS and robots
-- ECG/BIA/SpO2/PPG recording manifests and high-rate data
+- ECG/BIA/SpO2 automated measurement control and high-rate waveform transfers;
+  PPG manifest *indexing* remains disabled by default
 - Access from an untrusted network; automated APK distribution
 
 Failing health permissions, stale samples, off-wrist physiology, expired
