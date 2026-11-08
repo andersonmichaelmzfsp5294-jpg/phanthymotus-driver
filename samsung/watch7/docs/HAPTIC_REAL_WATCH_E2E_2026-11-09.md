@@ -55,12 +55,17 @@
    option. The full dialog was displayed; the confirmation button
    was reachable after scrolling. A subsequent real v2 heartbeat
    gave `HAPTIC_GATE=allowed`.
-7. Exactly **one** `single` pattern command was queued with a unique
-   `event_id`. The Watch Companion fetched it via the authenticated
+7. Exactly **one** `single` pattern command was queued by directly
+   calling `HapticQueue.queue()` from the isolated local verification
+   harness (not through a live MCP `tools/call`). The Watch Companion
+   fetched it via the authenticated
    `GET /v1/commands` route and sent a matching
    `POST /v1/ack` with `state=executed`.
-   The local Driver reported `WATCH_ACK_STATES ['executed']` and
-   `REAL_WATCH_APP_HAPTIC_ACK_EXECUTED_PASS`.
+   The local Driver test harness reported
+   `WATCH_ACK_STATES ['executed']` and
+   `REAL_WATCH_APP_HAPTIC_ACK_EXECUTED_PASS`. The result was delivered
+   to an in-process `on_ack` callback, **not** to a native ROS2
+   subscription.
    **An application ACK confirms the Watch requested vibration; it is
    not an independent accelerometer or wearer-sensation measurement.**
 8. Test server and command queue were stopped. The original WLAN URL
@@ -84,7 +89,8 @@
 | Standard APK preserving package/data | **PASS** | `adb install -r` Success |
 | Watch v2 actual heartbeat through ADB reverse | **PASS** | Repeated DeviceStore events |
 | Watch on-body and session consent gating | **PASS** | Unknown -> consent-required -> allowed |
-| MCP/HTTP Watch command and ACK | **PASS** | One Watch `executed` ACK |
+| Driver queue -> authenticated Watch HTTP command and ACK | **PASS** | One Watch `executed` ACK |
+| Live MCP `tools/call` and native ROS2 ACK subscriber | **NOT TESTED** | Hardware harness called HapticQueue directly; offline MCP tests had passed |
 | Independent vibrator motor measurement | **NOT VERIFIED** | App ACK is not physical sensing |
 | Direct independent Wi-Fi to Windows port 15751 | **FAIL/BLOCKED** | /health no 200, SocketException |
 | Native Bumi ARM64 deployment & ROS2 ACK subscriber | **NOT TESTED** | No Bumi operations |
