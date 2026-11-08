@@ -12,3 +12,5 @@ plugins:
     enabled: true
   watch_environment:
     enabled: true
+  watch_haptic:
+    enabled: true

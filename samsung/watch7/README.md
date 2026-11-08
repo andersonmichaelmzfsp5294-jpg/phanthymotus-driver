@@ -1,4 +1,4 @@
-# Samsung Galaxy Watch7 — read-only Sensor Driver
+# Samsung Galaxy Watch7 — Sensor and opt-in Haptic Driver
 
 ## PR and version boundaries
 
@@ -7,9 +7,11 @@ is the reviewed **two-Card baseline**: `heart_rate` and `device_state`.
 The **first** personal-Fork follow-up, `feat/watch7-motion-cards`,
 adds the read-only `watch_motion` Sensor. The **second**, dependent
 follow-up `feat/watch7-environment-cards`, adds `watch_environment`
-and a shared read-only metric Card adapter. Neither is part of PR #500.
+and a shared read-only metric Card adapter. The third follow-up,
+`feat/watch7-haptic-card`, adds a strictly gated `watch_haptic` Actuator.
+None of these changes are part of company PR #500.
 
-All four Cards use `std_msgs/String` JSON on ROS2 domain 42 with
+The four Sensor Cards use `std_msgs/String` JSON on ROS2 domain 42 with
 `data/json`:
 
 - `/{ros_namespace}/watch7/heart_rate`
@@ -28,10 +30,11 @@ The existing research companion APK sends `POST /v1/telemetry`, `POST
 /v2/telemetry` and polls commands. The Driver uses the original v1/v2
 protocol validators verbatim and exposes an authenticated watch-only HTTP
 endpoint on port **15751**. The existing app can continue to upload data
-without Windows Relay or ADB. The first PR and both read-only follow-ups intentionally return empty
-`/v1/commands` and `/v2/commands` queues and refuse all execution
-and task commands. No vibration, remote sampling, ECG/BIA or autonomous
-robot action is exposed by this bundle.
+without Windows Relay or ADB. The two Sensor follow-ups keep all
+commands disabled. This Haptic follow-up can return **only** bounded v1
+vibration commands when both the operator and wearer explicitly opt in.
+The `/v2/commands` queue stays empty, and task proposals, ECG/BIA,
+remote collection control and robot actions remain disabled.
 
 MCP binds to **127.0.0.1:15750**. The Watch ingress binds to 0.0.0.0:15751
 by default and requires `X-Wearable-Token`. Set `WATCH7_DEVICE_TOKEN`
@@ -60,10 +63,10 @@ merely to perform a local acceptance test. For no-push S5 tests, use the
 adjacent project's `scripts/s5_build_local.py` (Docker Buildx `--load`);
 the ARM64 build has passed against the company's ROS base image.
 
-Its Driver image contains only Python, ROS2, and four read-only Sensor
-Card plugins. The two follow-ups add `motion.py`, `environment.py`
-and the common `metric_cards.py` helper to the Docker COPY list; no
-new apt/pip dependencies are introduced.
+Its Driver image contains Python, ROS2, the four read-only Sensor
+Card plugins and the opt-in `watch_haptic` Actuator. The feature
+branches add `motion.py`, `environment.py`, `metric_cards.py`
+and `haptics.py` without adding apt/pip dependencies.
 There is no Android SDK or Samsung proprietary SDK inside the Docker image.
 The host needs the company's `/opt/phanthy-motus/dds-local.xml` loopback
 DDS profile, ROS domain 42 and host network mode.
@@ -88,6 +91,52 @@ license terms are not substitutes for an approved production distribution.
 python3 -m pytest samsung/watch7/tests -q
 python3 scripts/check_service_yml.py samsung/watch7
 ```
+
+### `watch_haptic` contract — third follow-up
+
+Type: `actuator`; actions: `info`, `start`, `stop`,
+`vibrate(pattern,event_id,reason)` and `status(request_id)`.
+ROS2 ACK topic: `/{ros_namespace}/watch7/haptic_acks` as JSON.
+Only `single`, `double`, `triple` patterns are supported.
+
+**Fail closed by default:** merely enabling the Card in `config.yaml`
+only makes it visible to MCP; it does not grant hardware execution.
+An operator must deliberately set `WATCH7_HAPTIC_ACTIONS_ENABLED=1`,
+and the user must start monitoring and explicitly enable
+"授权/撤销当前监测会话的远程振动" in the matching Watch companion.
+The v2 device heartbeat must be real, fresh (<15 s), collecting,
+online, on-body, and contain `haptic_enabled=true`. This flag is
+**independent** of `remote_control_enabled` (sensor collection) and
+`agent_prompts_enabled` (task proposal notifications); neither grants
+remote vibration. Old companion builds missing the new field are denied.
+
+Commands are placed on the authenticated **`/v1/commands`** route,
+with a 3,000 ms monotonic lease, 5,000 ms cooldown, bounded queue and
+120 s event-id replay protection. `/v1/ack` requires a matching
+`request_id`, `session_id`, and a valid device result. It is
+idempotent, and only accepted Watch ACKs publish a ROS2 result.
+A command being queued, HTTP-delivered, or having an MCP 200 response
+**never** means the watch motor executed. Even an `executed` ACK is a
+Watch App report, not an objective measurement of vibration amplitude.
+
+On the Watch side, the opt-in is lost on foreground monitoring service
+restart. Revocation is checked again immediately before vibrating,
+and processed IDs are persisted before action to prevent duplicate
+execution after a process crash. An expired, mismatched-session,
+off-wrist or unconsented command must not vibrate.
+
+**Companion code dependency:** The companion changes are located at
+`../heart-rate-wear-test/app/src/main/java/com/example/heartrateweartest/`
+(`MainActivity.kt`, `HealthMonitorService.kt`, `GatewayClient.kt`,
+`DeviceStateRepository.kt`). That directory is **not part of the
+company Driver repository**, and this Driver commit does not upload
+the Android sources or an APK. You must build/install the matching
+Standard companion separately after review. An older APK cannot
+consent to this new actuator, by design.
+
+Testing the Python Card alone does **not** establish live Watch7 ACK
+or actual vibration. Do not enable remote actions on Bumi until a
+separate explicit deployment and on-Watch acceptance check.
 
 ### `watch_environment` contract
 
@@ -144,7 +193,7 @@ acceptance.
 
 ## Disabled functionality (separate, reviewed PRs)
 
-- Remote start/stop/configure, haptics, device execution ACKs
+- Remote sampling start/stop/configure; task-bound haptic authorization
 - Task proposals, consent/revocation, TTS and robots
 - ECG/BIA/SpO2/PPG recording manifests and high-rate data
 - Access from an untrusted network; automated APK distribution

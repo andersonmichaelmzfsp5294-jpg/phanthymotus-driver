@@ -163,6 +163,12 @@ def validate_v2(raw: Any, *, now_ms: int | None = None) -> tuple[str, dict]:
             if type(raw["remote_control_enabled"]) is not bool:
                 raise ValueError("invalid remote control consent")
             cleaned["remote_control_enabled"] = raw["remote_control_enabled"]
+        # Distinct from remote collection control or Agent task notifications:
+        # the Watch user must explicitly opt in to short remote vibrations.
+        if "haptic_enabled" in raw:
+            if type(raw["haptic_enabled"]) is not bool:
+                raise ValueError("invalid haptic consent")
+            cleaned["haptic_enabled"] = raw["haptic_enabled"]
         if "charging" in raw:
             if type(raw["charging"]) is not bool:
                 raise ValueError("invalid charging state")

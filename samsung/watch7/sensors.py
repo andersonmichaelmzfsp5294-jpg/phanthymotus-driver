@@ -64,7 +64,8 @@ class SensorPlugin:
             self._publisher(json.dumps(event, separators=(",", ":"), ensure_ascii=False))
 
 
-def build_plugins(device, namespace: str, publish_factory, config: dict) -> list[SensorPlugin]:
+def build_plugins(device, namespace: str, publish_factory, config: dict,
+                  haptic_queue=None) -> list:
     plugins = []
     specs = [
         ("heart_rate", "Live Watch7 heart-rate Sensor. No data is invented when offline.",
@@ -86,4 +87,8 @@ def build_plugins(device, namespace: str, publish_factory, config: dict) -> list
         from environment import EnvironmentPlugin
         topic = f"/{namespace}/watch7/environment"
         plugins.append(EnvironmentPlugin(device, topic, publish_factory(topic)))
+    if enabled.get("watch_haptic", {}).get("enabled", False) and haptic_queue is not None:
+        from haptics import HapticPlugin
+        topic = f"/{namespace}/watch7/haptic_acks"
+        plugins.append(HapticPlugin(haptic_queue, topic))
     return plugins

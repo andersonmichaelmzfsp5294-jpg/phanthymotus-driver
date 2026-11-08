@@ -5,6 +5,7 @@ No Windows Relay, ADB, Agent Core patches, or research SDK required at runtime.
 """
 from __future__ import annotations
 
+import json
 import os
 import signal
 import threading
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from common.vendor_runtime import DriverBundle, make_handler, resolve_namespace
 from device import DeviceStore
+from haptics import HapticQueue
 from sensors import build_plugins
 from transport import make_device_server
 
@@ -61,8 +63,10 @@ def load_config(path: str | None = None) -> dict:
         return yaml.safe_load(handle) or {}
 
 
-def create_bundle(device: DeviceStore, namespace: str, publish_factory, config: dict):
-    plugins = build_plugins(device, namespace, publish_factory, config)
+def create_bundle(device: DeviceStore, namespace: str, publish_factory, config: dict,
+                  haptic_queue=None):
+    plugins = build_plugins(device, namespace, publish_factory, config,
+                            haptic_queue=haptic_queue)
     return DriverBundle(plugins), {plugin.name: plugin for plugin in plugins}
 
 
@@ -117,7 +121,20 @@ def run() -> None:
         on_device=lambda sample: plugins.get("device_state") and plugins["device_state"].publish(sample),
         on_metrics=publish_metrics,
     )
-    bundle, plugins = create_bundle(device, namespace, publish_factory, cfg)
+    # A remote command requires both this explicit deployment flag and
+    # an opt-in heartbeat from a Watch user in the currently active session.
+    ack_topic = f"/{namespace}/watch7/haptic_acks"
+    ack_publisher = publish_factory(ack_topic)
+    haptic_queue = HapticQueue(
+        device,
+        operator_enabled=os.environ.get("WATCH7_HAPTIC_ACTIONS_ENABLED") == "1",
+        on_ack=lambda event: ack_publisher(
+            json.dumps(event, separators=(",", ":"), ensure_ascii=False)
+        ),
+    )
+    bundle, plugins = create_bundle(
+        device, namespace, publish_factory, cfg, haptic_queue=haptic_queue
+    )
     bundle.start_all()
     executor = SingleThreadedExecutor()
     executor.add_node(node)
@@ -131,7 +148,7 @@ def run() -> None:
         executor_thread.start()
         watch_server = make_device_server(
             os.environ.get("WATCH7_INGRESS_HOST", cfg.get("ingress_host", "0.0.0.0")),
-            ingress_port, device, token
+            ingress_port, device, token, haptics=haptic_queue
         )
         mcp_server = ThreadingHTTPServer(
             (mcp_bind_host, mcp_port),

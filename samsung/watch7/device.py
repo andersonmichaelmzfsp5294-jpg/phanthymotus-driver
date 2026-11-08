@@ -113,7 +113,8 @@ class DeviceStore:
                     "wear_state": clean["wear_state"], "online": clean["online"],
                     "collecting": clean["collecting"], "fresh": True,
                 }
-                for field in ("battery_pct", "charging", "heart_permission", "app_version"):
+                for field in ("battery_pct", "charging", "heart_permission",
+                              "app_version", "haptic_enabled"):
                     if field in clean:
                         event[field] = clean[field]
             else:
@@ -233,6 +234,23 @@ class DeviceStore:
                           "hardware": "device_dependent"},
         }
 
+    def haptic_gate(self) -> dict:
+        """Require a live real, on-body heartbeat with explicit haptic consent."""
+        with self._lock:
+            if not self._is_fresh(self._state):
+                return {"ok": False, "reason": "no_fresh_watch_heartbeat"}
+            state = self._state[0]
+            if state.get("source") != "watch7_real":
+                return {"ok": False, "reason": "simulated_device"}
+            if not state.get("online") or not state.get("collecting"):
+                return {"ok": False, "reason": "watch_offline_or_idle"}
+            if state.get("wear_state") != "on_body":
+                return {"ok": False, "reason": "watch_not_worn"}
+            # Missing field in an older Watch APK must never grant consent.
+            if state.get("haptic_enabled") is not True:
+                return {"ok": False, "reason": "watch_haptic_consent_required"}
+            return {"ok": True, "session_id": state["session_id"]}
+
     def heart_snapshot(self) -> dict:
         with self._lock:
             # Prefer v2 when present; fall back to the already validated legacy v1.
@@ -275,6 +293,7 @@ class DeviceStore:
                     "available": True, "fresh": True,
                     "online": bool(clean["online"]), "collecting": bool(clean["collecting"]),
                     "wear_state": clean["wear_state"],
+                    "haptic_enabled": clean.get("haptic_enabled", False),
                     "battery_pct": clean.get("battery_pct"),
                     "source": clean["source"], "session_id": clean["session_id"],
                     "heartbeat_age_ms": self._mono() - arrived,

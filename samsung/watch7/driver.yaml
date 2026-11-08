@@ -6,7 +6,7 @@ hardware_model: "watch7"
 image_name: samsung-watch7
 port: 15750
 mcp_url: "http://localhost:15750/mcp"
-description: "Galaxy Watch7 — read-only heart rate, device state, motion and environment Sensors (companion APK required)"
+description: "Galaxy Watch7 — four read-only Sensors and one opt-in haptic Actuator (companion APK required)"
 build_context_extras:
   - ../../common
 cards:
@@ -14,3 +14,4 @@ cards:
   - { name: device_state, type: sensor }
   - { name: watch_motion, type: sensor }
   - { name: watch_environment, type: sensor }
+  - { name: watch_haptic, type: actuator }

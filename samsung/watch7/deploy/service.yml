@@ -10,6 +10,8 @@ samsung-watch7:
     - FASTRTPS_DEFAULT_PROFILES_FILE=/opt/phanthy-motus/dds-local.xml
     - PYTHONUNBUFFERED=1
     - WATCH7_DEVICE_TOKEN
+    # Explicitly disabled on Bumi until a separate actuator safety acceptance.
+    - WATCH7_HAPTIC_ACTIONS_ENABLED=0
   logging:
     driver: local
     options:

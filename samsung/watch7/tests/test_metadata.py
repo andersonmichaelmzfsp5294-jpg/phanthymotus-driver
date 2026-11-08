@@ -18,14 +18,16 @@ def test_driver_metadata_and_config_consistent():
     assert cards == {
         "heart_rate": "sensor", "device_state": "sensor",
         "watch_motion": "sensor", "watch_environment": "sensor",
+        "watch_haptic": "actuator",
     }
     assert {name for name, x in cfg["plugins"].items() if x.get("enabled")} == set(cards)
     service = compose["samsung-watch7"]
     assert service["network_mode"] == "host"
     assert service["image"] == "__IMAGE__"
     assert "ROS_DOMAIN_ID=42" in service["environment"]
+    assert "WATCH7_HAPTIC_ACTIONS_ENABLED=0" in service["environment"]
     assert "FASTRTPS_DEFAULT_PROFILES_FILE=/opt/phanthy-motus/dds-local.xml" in service["environment"]
     assert all((root / name).is_file() for name in [
         "main.py", "device.py", "sensors.py", "motion.py",
-        "environment.py", "metric_cards.py", "transport.py",
+        "environment.py", "metric_cards.py", "haptics.py", "transport.py",
         "protocol_v1.py", "protocol_v2.py", "Dockerfile", "requirements.txt"])
