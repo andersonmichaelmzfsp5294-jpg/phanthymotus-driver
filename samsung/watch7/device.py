@@ -23,6 +23,7 @@ class DeviceStore:
         *,
         on_heart: Callable[[dict], None] | None = None,
         on_device: Callable[[dict], None] | None = None,
+        on_metrics: Callable[[dict], None] | None = None,
         allow_simulated: bool = False,
         wall_ms: Callable[[], int] | None = None,
         monotonic_ms: Callable[[], int] | None = None,
@@ -33,9 +34,11 @@ class DeviceStore:
         self._allow_simulated = allow_simulated
         self._on_heart = on_heart or (lambda payload: None)
         self._on_device = on_device or (lambda payload: None)
+        self._on_metrics = on_metrics or (lambda payload: None)
         self._seq: OrderedDict[tuple, int] = OrderedDict()
         self._v1: tuple[dict, int] | None = None
         self._v2_heart: tuple[dict, int] | None = None
+        self._v2_summary: tuple[dict, int] | None = None
         self._state: tuple[dict, int] | None = None
 
     def _accept_seq(self, key: tuple, seq: int) -> bool:
@@ -95,6 +98,7 @@ class DeviceStore:
             return {"ok": False, "reason": "kind_not_enabled"}
         event_type = None
         event = None
+        metrics_event = None
         with self._lock:
             key = ("v2", clean["device_id"], clean["session_id"], clean["kind"])
             if not self._accept_seq(key, clean["seq"]):
@@ -113,6 +117,11 @@ class DeviceStore:
                     if field in clean:
                         event[field] = clean[field]
             else:
+                # Keep the complete validated summary for read-only metric
+                # Cards. protocol_v2 has already bounded values and rejected
+                # raw waveform payloads.
+                self._v2_summary = (dict(clean), arrival)
+                metrics_event = dict(clean)
                 metric = clean["metrics"].get("heart_rate_bpm")
                 if (metric is not None and metric["quality"] == "valid"
                         and metric["value"] is not None
@@ -134,7 +143,95 @@ class DeviceStore:
             self._on_heart(event)
         elif event_type == "device":
             self._on_device(event)
+        if metrics_event is not None:
+            self._on_metrics(metrics_event)
         return {"ok": True, "kind": clean["kind"], "seq": clean["seq"]}
+
+    @staticmethod
+    def _metric_names() -> tuple[str, ...]:
+        return (
+            "heart_rate_bpm", "motion_score", "accel_m_s2", "gyro_rad_s",
+            "gyro_uncalibrated_rad_s", "magnetic_field_uT", "rotation_vector",
+            "game_rotation_vector", "linear_accel_m_s2", "gravity_m_s2",
+            "geomagnetic_rotation_vector", "pressure_hpa", "light_lux",
+            "step_count",
+        )
+
+    def metric_snapshot(self, name: str) -> dict:
+        """Read a fresh quality-valid v2 metric without starting sampling."""
+        if name not in self._metric_names():
+            return {"ok": False, "reason": "unsupported_metric"}
+        with self._lock:
+            record = self._v2_summary
+            if record is None:
+                return {"ok": False, "reason": "no_v2_summary"}
+            frame, arrived = record
+            age_since_arrival = self._mono() - arrived
+            if (not 0 <= age_since_arrival <= MAX_AGE_MS
+                    or frame.get("source") != "watch7_real"):
+                return {"ok": False, "reason": "stale_or_simulated"}
+            # An IMU snapshot from a previous Watch session must not appear
+            # current merely because its local receive timestamp is fresh.
+            if not self._is_fresh(self._state):
+                return {"ok": False, "reason": "device_state_unavailable"}
+            state = self._state[0]
+            if (state["session_id"] != frame["session_id"]
+                    or state["source"] != frame["source"]
+                    or not state["online"] or not state["collecting"]):
+                return {"ok": False, "reason": "device_state_mismatch_or_idle"}
+            metric = frame.get("metrics", {}).get(name)
+            if (metric is None or metric.get("quality") != "valid"
+                    or metric.get("value") is None):
+                return {"ok": False, "reason": "metric_unavailable"}
+            sensor_age = metric.get("age_ms", MAX_AGE_MS + 1) + age_since_arrival
+            if sensor_age > MAX_AGE_MS:
+                return {"ok": False, "reason": "stale_or_simulated"}
+            if (name == "heart_rate_bpm"
+                    and (frame.get("wear_state") == "off_body"
+                         or self._blocked_by_wear(frame["session_id"]))):
+                return {"ok": False, "reason": "off_body"}
+            return {
+                "ok": True, "metric": name, "value": metric["value"],
+                "unit": metric["unit"], "quality": metric["quality"],
+                "provider": metric["provider"], "source": frame["source"],
+                "session_id": frame["session_id"], "seq": frame["seq"],
+                "sensor_age_ms": sensor_age, "fresh": True,
+                "wear_state": frame["wear_state"],
+                "captured_at_ms": frame["captured_at_ms"],
+            }
+
+    def metric_capabilities(self) -> dict:
+        """Static capability descriptions; live availability comes from reads."""
+        return {
+            "heart_rate_bpm": {
+                "provider": "health_services", "integrated": True,
+                "requires_permission": "READ_HEART_RATE",
+            },
+            "motion_score": {"provider": "android_sensor", "integrated": True},
+            "accel_m_s2": {"provider": "android_sensor", "integrated": True},
+            "gyro_rad_s": {"provider": "android_sensor", "integrated": True,
+                            "hardware": "device_dependent"},
+            "gyro_uncalibrated_rad_s": {"provider": "android_sensor", "integrated": True,
+                                         "hardware": "device_dependent"},
+            "magnetic_field_uT": {"provider": "android_sensor", "integrated": True,
+                                   "hardware": "device_dependent"},
+            "rotation_vector": {"provider": "android_sensor", "integrated": True,
+                                 "hardware": "device_dependent"},
+            "game_rotation_vector": {"provider": "android_sensor", "integrated": True,
+                                      "hardware": "device_dependent"},
+            "linear_accel_m_s2": {"provider": "android_sensor", "integrated": True,
+                                   "hardware": "device_dependent"},
+            "gravity_m_s2": {"provider": "android_sensor", "integrated": True,
+                             "hardware": "device_dependent"},
+            "geomagnetic_rotation_vector": {"provider": "android_sensor", "integrated": True,
+                                             "hardware": "device_dependent"},
+            "step_count": {"provider": "android_sensor", "integrated": True,
+                            "requires_permission": "ACTIVITY_RECOGNITION"},
+            "pressure_hpa": {"provider": "android_sensor", "integrated": True,
+                             "hardware": "device_dependent"},
+            "light_lux": {"provider": "android_sensor", "integrated": True,
+                          "hardware": "device_dependent"},
+        }
 
     def heart_snapshot(self) -> dict:
         with self._lock:

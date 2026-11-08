@@ -8,3 +8,5 @@ plugins:
     enabled: true
   device_state:
     enabled: true
+  watch_motion:
+    enabled: true

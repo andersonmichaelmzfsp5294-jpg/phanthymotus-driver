@@ -15,7 +15,7 @@ def test_driver_metadata_and_config_consistent():
     assert driver["mcp_url"] == "http://localhost:15750/mcp"
     assert 15751 == cfg["ingress_port"] != driver["port"]
     cards = {card["name"]: card["type"] for card in driver["cards"]}
-    assert cards == {"heart_rate": "sensor", "device_state": "sensor"}
+    assert cards == {"heart_rate": "sensor", "device_state": "sensor", "watch_motion": "sensor"}
     assert {name for name, x in cfg["plugins"].items() if x.get("enabled")} == set(cards)
     service = compose["samsung-watch7"]
     assert service["network_mode"] == "host"
@@ -23,5 +23,5 @@ def test_driver_metadata_and_config_consistent():
     assert "ROS_DOMAIN_ID=42" in service["environment"]
     assert "FASTRTPS_DEFAULT_PROFILES_FILE=/opt/phanthy-motus/dds-local.xml" in service["environment"]
     assert all((root / name).is_file() for name in [
-        "main.py", "device.py", "sensors.py", "transport.py",
+        "main.py", "device.py", "sensors.py", "motion.py", "transport.py",
         "protocol_v1.py", "protocol_v2.py", "Dockerfile", "requirements.txt"])

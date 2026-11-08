@@ -1,4 +1,4 @@
-"""Two first-PR Watch7 Sensor cards, sharing one DeviceStore and ROS2 bus."""
+"""Watch7 Sensor Card factory: reviewed baseline plus optional read-only motion."""
 from __future__ import annotations
 
 import json
@@ -76,4 +76,10 @@ def build_plugins(device, namespace: str, publish_factory, config: dict) -> list
     for name, description, topic in specs:
         if enabled.get(name, {}).get("enabled", False):
             plugins.append(SensorPlugin(name, description, topic, device, publish_factory(topic)))
+    if enabled.get("watch_motion", {}).get("enabled", False):
+        # Import at construction time so the reusable base SensorPlugin can
+        # also be imported directly without a circular module import.
+        from motion import MotionPlugin
+        topic = f"/{namespace}/watch7/motion"
+        plugins.append(MotionPlugin(device, topic, publish_factory(topic)))
     return plugins

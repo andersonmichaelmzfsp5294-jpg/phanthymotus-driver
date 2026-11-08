@@ -108,6 +108,7 @@ def run() -> None:
     device = DeviceStore(
         on_heart=lambda sample: plugins.get("heart_rate") and plugins["heart_rate"].publish(sample),
         on_device=lambda sample: plugins.get("device_state") and plugins["device_state"].publish(sample),
+        on_metrics=lambda sample: plugins.get("watch_motion") and plugins["watch_motion"].publish(sample),
     )
     bundle, plugins = create_bundle(device, namespace, publish_factory, cfg)
     bundle.start_all()
@@ -151,7 +152,7 @@ def run() -> None:
         signal.signal(signal.SIGINT, stop)
         print(
             f"[watch7] mcp={mcp_bind_host}:{mcp_port}, ingress={watch_server.server_address}, "
-            f"namespace={namespace}; only heart_rate/device_state enabled",
+            f"namespace={namespace}; cards={','.join(sorted(plugins))}",
             flush=True,
         )
         mcp_server.serve_forever(poll_interval=0.1)
