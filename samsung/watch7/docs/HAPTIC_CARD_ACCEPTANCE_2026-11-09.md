@@ -1,5 +1,13 @@
 # Watch7 Haptic Actuator — local acceptance (2026-11-09)
 
+**Post-test update:** The initial sections below describe the earlier
+software-only acceptance. A subsequent real Watch7 engineering E2E
+**passed over a temporary ADB reverse tunnel** (one matched `executed`
+Watch App ACK), but direct standalone WLAN-to-Windows HTTP was blocked.
+The test cleaned up both the saved URL and temporary consent. See
+[`HAPTIC_REAL_WATCH_E2E_2026-11-09.md`](HAPTIC_REAL_WATCH_E2E_2026-11-09.md).
+Do not confuse the app ACK with physical motor instrumentation.
+
 ## Ownership and version
 
 - Company upstream PR #500: `bc12b50243a63ef09af6237044f0fd5d45a22e59`.
