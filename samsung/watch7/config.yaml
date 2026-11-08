@@ -10,3 +10,5 @@ plugins:
     enabled: true
   watch_motion:
     enabled: true
+  watch_environment:
+    enabled: true

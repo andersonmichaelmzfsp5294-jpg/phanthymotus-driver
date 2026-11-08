@@ -1,4 +1,4 @@
-"""Watch7 Sensor Card factory: reviewed baseline plus optional read-only motion."""
+"""Watch7 Sensor Card factory for base, motion and environment metrics."""
 from __future__ import annotations
 
 import json
@@ -82,4 +82,8 @@ def build_plugins(device, namespace: str, publish_factory, config: dict) -> list
         from motion import MotionPlugin
         topic = f"/{namespace}/watch7/motion"
         plugins.append(MotionPlugin(device, topic, publish_factory(topic)))
+    if enabled.get("watch_environment", {}).get("enabled", False):
+        from environment import EnvironmentPlugin
+        topic = f"/{namespace}/watch7/environment"
+        plugins.append(EnvironmentPlugin(device, topic, publish_factory(topic)))
     return plugins

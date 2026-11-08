@@ -5,7 +5,7 @@ WORKDIR /work
 # Avoid adding pip and network resolution for this read-only Sensor Driver.
 RUN /bin/bash -lc "source /opt/ros/humble/setup.bash && python3 -c 'import yaml, rclpy; from std_msgs.msg import String'"
 COPY common/ /work/common/
-COPY main.py device.py protocol_v1.py protocol_v2.py transport.py sensors.py motion.py /work/
+COPY main.py device.py protocol_v1.py protocol_v2.py transport.py sensors.py motion.py environment.py metric_cards.py /work/
 COPY config.yaml /work/config.yaml
 COPY deploy/ /deploy/
 ENV PYTHONUNBUFFERED=1

@@ -105,10 +105,17 @@ def run() -> None:
         return publish_json
 
     plugins: dict[str, object] = {}
+
+    def publish_metrics(sample: dict) -> None:
+        for name in ("watch_motion", "watch_environment"):
+            plugin = plugins.get(name)
+            if plugin is not None:
+                plugin.publish(sample)
+
     device = DeviceStore(
         on_heart=lambda sample: plugins.get("heart_rate") and plugins["heart_rate"].publish(sample),
         on_device=lambda sample: plugins.get("device_state") and plugins["device_state"].publish(sample),
-        on_metrics=lambda sample: plugins.get("watch_motion") and plugins["watch_motion"].publish(sample),
+        on_metrics=publish_metrics,
     )
     bundle, plugins = create_bundle(device, namespace, publish_factory, cfg)
     bundle.start_all()

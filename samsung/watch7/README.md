@@ -4,15 +4,18 @@
 
 Company PR **#500** (`feat/watch7-heart-rate-driver`, commit `bc12b50`)
 is the reviewed **two-Card baseline**: `heart_rate` and `device_state`.
-This **separate personal-Fork follow-up**, `feat/watch7-motion-cards`,
-adds one read-only `watch_motion` Sensor. It is NOT part of PR #500.
+The **first** personal-Fork follow-up, `feat/watch7-motion-cards`,
+adds the read-only `watch_motion` Sensor. The **second**, dependent
+follow-up `feat/watch7-environment-cards`, adds `watch_environment`
+and a shared read-only metric Card adapter. Neither is part of PR #500.
 
-All three Cards use `std_msgs/String` JSON on ROS2 domain 42 with
+All four Cards use `std_msgs/String` JSON on ROS2 domain 42 with
 `data/json`:
 
 - `/{ros_namespace}/watch7/heart_rate`
 - `/{ros_namespace}/watch7/device_state`
 - `/{ros_namespace}/watch7/motion`
+- `/{ros_namespace}/watch7/environment`
 
 The ROS namespace defaults to the sanitized hostname. All Sensor `start`
 and `stop` actions **only gate ROS2 publication in the Driver**; they do not
@@ -25,7 +28,7 @@ The existing research companion APK sends `POST /v1/telemetry`, `POST
 /v2/telemetry` and polls commands. The Driver uses the original v1/v2
 protocol validators verbatim and exposes an authenticated watch-only HTTP
 endpoint on port **15751**. The existing app can continue to upload data
-without Windows Relay or ADB. The first PR and this motion follow-up intentionally return empty
+without Windows Relay or ADB. The first PR and both read-only follow-ups intentionally return empty
 `/v1/commands` and `/v2/commands` queues and refuse all execution
 and task commands. No vibration, remote sampling, ECG/BIA or autonomous
 robot action is exposed by this bundle.
@@ -57,9 +60,10 @@ merely to perform a local acceptance test. For no-push S5 tests, use the
 adjacent project's `scripts/s5_build_local.py` (Docker Buildx `--load`);
 the ARM64 build has passed against the company's ROS base image.
 
-Its Driver image contains only Python, ROS2, and the three read-only Sensor
-Card plugins. This follow-up adds the `motion.py` module to the existing
-Docker COPY list; it does not add apt/pip dependencies.
+Its Driver image contains only Python, ROS2, and four read-only Sensor
+Card plugins. The two follow-ups add `motion.py`, `environment.py`
+and the common `metric_cards.py` helper to the Docker COPY list; no
+new apt/pip dependencies are introduced.
 There is no Android SDK or Samsung proprietary SDK inside the Docker image.
 The host needs the company's `/opt/phanthy-motus/dds-local.xml` loopback
 DDS profile, ROS domain 42 and host network mode.
@@ -85,6 +89,33 @@ python3 -m pytest samsung/watch7/tests -q
 python3 scripts/check_service_yml.py samsung/watch7
 ```
 
+### `watch_environment` contract
+
+Actions: `info`, `capabilities`, `read(metric)`, `start`, `stop`.
+Names and units: `pressure_hpa` (hPa), `light_lux` (lux), and
+`magnetic_field_uT` (three-axis microtesla vector).
+The Watch-side Standard companion already reads these optional public
+Android `SensorManager` metrics; no Samsung proprietary SDK is used.
+Data is returned only from the validated v2 `summary` cache.
+
+Like the Motion Card, its `read` and ROS2 outputs require a fresh,
+online and collecting v2 heartbeat in the same session, quality `valid`,
+a sensor age of at most 15 seconds, and source `watch7_real`.
+On-change light values may become stale without a new event; the Card
+must then return `stale_or_simulated`, not a fabricated replacement.
+Off-body state does not invalidate ambient readings, but is always
+explicitly reported. Data values do not establish weather, altitude,
+heading or environmental measurement accuracy.
+
+The `environment` topic contains **only** the three allowed ambient
+metrics. Heart rate, accelerometer and all other metrics are excluded.
+The `capabilities` response describes implemented code paths only,
+not a verified current sensor reading.
+
+The two metric Cards share `metric_cards.py` to keep action schema,
+freshness checks and output filtering consistent. The original two
+baseline Sensor Cards remain unchanged in behavior.
+
 ### `watch_motion` contract
 
 Actions: `info`, `capabilities`, `read(metric)`, `start`, `stop`.
@@ -101,9 +132,9 @@ ROS2 topic does not include heart-rate or any other health metric.
 Static capabilities describe available code paths, not live hardware status.
 No raw IMU waveform, long-term recording or activity diagnosis is provided.
 
-This is an offline-contract-tested implementation until a genuine Watch7
-v2 motion summary, separate ROS2 subscriber and Dashboard Canvas run are
-verified together. The earlier independent sensor probe does not prove this
+These are offline-contract-tested implementations until genuine Watch7
+v2 motion and environment summaries, separate ROS2 subscribers and
+Dashboard Canvas runs are verified together. The earlier independent sensor probe does not prove this
 Card's real-device acceptance.
 
 No Watch is needed for these checks. True end-to-end verification requires
