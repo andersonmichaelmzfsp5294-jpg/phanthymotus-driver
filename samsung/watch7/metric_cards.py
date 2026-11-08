@@ -12,11 +12,12 @@ class MetricSensorPlugin(SensorPlugin):
     """Sensor Card for a fixed set of quality-checked v2 metrics."""
 
     def __init__(self, name: str, description: str, metrics: tuple[str, ...],
-                 device, topic: str, ros_publisher):
+                 device, topic: str, ros_publisher, *, required_provider=None):
         if not metrics or len(metrics) != len(set(metrics)):
             raise ValueError("metric names must be nonempty and unique")
         super().__init__(name, description, topic, device, ros_publisher)
         self.metrics = metrics
+        self.required_provider = required_provider
 
     def get_tool(self) -> dict:
         return {
@@ -63,12 +64,17 @@ class MetricSensorPlugin(SensorPlugin):
                             if name in declared},
                 "availability": "requires_fresh_device_heartbeat_and_valid_metric",
                 "watch_sampling_controlled": False,
+                "required_provider": self.required_provider,
             }
         if action == "read":
             metric = args.get("metric")
             if metric not in self.metrics:
                 return {"ok": False, "reason": "unsupported_metric"}
-            return self.device.metric_snapshot(metric)
+            snapshot = self.device.metric_snapshot(metric)
+            if (snapshot.get("ok") and self.required_provider is not None
+                    and snapshot["provider"] != self.required_provider):
+                return {"ok": False, "reason": "provider_not_supported"}
+            return snapshot
         return None
 
     def publish(self, frame: dict) -> None:
@@ -83,7 +89,9 @@ class MetricSensorPlugin(SensorPlugin):
         for name in self.metrics:
             snap = self.device.metric_snapshot(name)
             if (not snap.get("ok") or snap["session_id"] != frame.get("session_id")
-                    or snap["seq"] != frame.get("seq")):
+                    or snap["seq"] != frame.get("seq")
+                    or (self.required_provider is not None
+                        and snap["provider"] != self.required_provider)):
                 continue
             accepted[name] = {
                 "value": snap["value"], "unit": snap["unit"],

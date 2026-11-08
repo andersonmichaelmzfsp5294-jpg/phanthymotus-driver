@@ -14,10 +14,11 @@ This further **dependent** personal-Fork branch,
 summaries) and `watch_recordings` (PPG manifests only).
 The next dependent branch, `feat/watch7-activity-card`, adds the
 experimental read-only `watch_activity` Processor and fixes private
-Docker test namespace/MCP identity isolation. None of these changes are
-part of company PR #500.
+Docker test namespace/MCP identity isolation. The next dependent branch, `feat/watch7-orientation-card`, adds
+`watch_orientation` for public Android orientation/gravity vectors.
+None of these changes are part of company PR #500.
 
-The six Sensor Cards and one activity Processor use `std_msgs/String`
+The seven Sensor Cards and one activity Processor use `std_msgs/String`
 JSON on ROS2 domain 42 with
 `data/json`:
 
@@ -28,6 +29,7 @@ JSON on ROS2 domain 42 with
 - `/{ros_namespace}/watch7/vitals` (SDK summary values only)
 - `/{ros_namespace}/watch7/recordings` (PPG metadata only, opt-in)
 - `/{ros_namespace}/watch7/activity` (experimental motion state)
+- `/{ros_namespace}/watch7/orientation` (public Android orientation/gravity vectors)
 
 The ROS namespace defaults to the sanitized hostname. All Sensor `start`
 and `stop` actions **only gate ROS2 publication in the Driver**; they do not
@@ -73,11 +75,12 @@ merely to perform a local acceptance test. For no-push S5 tests, use the
 adjacent project's `scripts/s5_build_local.py` (Docker Buildx `--load`);
 the ARM64 build has passed against the company's ROS base image.
 
-Its Driver image contains Python, ROS2, six Sensor Card plugins,
+Its Driver image contains Python, ROS2, seven Sensor Card plugins,
 the read-only `watch_activity` Processor and the opt-in `watch_haptic`
 Actuator. Dependent feature branches
 add `motion.py`, `environment.py`, `metric_cards.py`,
-`vitals.py`, `recordings.py`, `activity.py` and `haptics.py` without
+`vitals.py`, `recordings.py`, `activity.py`, `orientation.py`
+and `haptics.py` without
 adding apt/pip dependencies.
 There is no Android SDK or Samsung proprietary SDK inside the Docker image.
 The host needs the company's `/opt/phanthy-motus/dds-local.xml` loopback
@@ -103,6 +106,27 @@ license terms are not substitutes for an approved production distribution.
 python3 -m pytest samsung/watch7/tests -q
 python3 scripts/check_service_yml.py samsung/watch7
 ```
+
+### `watch_orientation` contract — public Android orientation vectors
+
+Read-only Sensor Card; actions: `info`, `capabilities`, `read(metric)`,
+`start`, `stop`. Names: `rotation_vector`, `game_rotation_vector`,
+`geomagnetic_rotation_vector`, `gravity_m_s2`, `linear_accel_m_s2`.
+Values are **raw sensor-frame vectors**, length 3–5 for rotation
+vectors or exactly 3 for acceleration/gravity. Units are `unitless`
+for rotation, `m/s2` for acceleration and gravity. The Card does not
+convert to yaw/pitch/roll or compass heading, normalize quaternions,
+infer gestures or trigger robot motion.
+
+It reuses the existing foreground Android SensorManager sampling and
+v2 summary cache; no Samsung SDK, subscriptions or remote triggers are
+added. `read` and the ROS2 topic require a current real summary, live
+same-session heartbeat and quality-valid value with provider
+`android_sensor`. Invalid, stale or unavailable values are omitted,
+never synthesized. Off-wrist vector readings may be reported with an
+explicit `wear_state=off_body`, but no wearer-posture interpretation
+is made. These are orientation sensor outputs, not absolute calibrated
+human pose measurements.
 
 ### `watch_activity` contract — exploratory motion observations
 

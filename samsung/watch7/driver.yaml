@@ -16,5 +16,6 @@ cards:
   - { name: watch_environment, type: sensor }
   - { name: watch_vitals, type: sensor }
   - { name: watch_activity, type: processor }
+  - { name: watch_orientation, type: sensor }
   - { name: watch_recordings, type: sensor }
   - { name: watch_haptic, type: actuator }

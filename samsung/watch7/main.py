@@ -135,7 +135,8 @@ def run() -> None:
     plugins: dict[str, object] = {}
 
     def publish_metrics(sample: dict) -> None:
-        for name in ("watch_motion", "watch_environment", "watch_vitals", "watch_activity"):
+        for name in ("watch_motion", "watch_environment", "watch_vitals",
+                     "watch_activity", "watch_orientation"):
             plugin = plugins.get(name)
             if plugin is not None:
                 plugin.publish(sample)

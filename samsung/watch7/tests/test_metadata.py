@@ -19,7 +19,7 @@ def test_driver_metadata_and_config_consistent():
         "heart_rate": "sensor", "device_state": "sensor",
         "watch_motion": "sensor", "watch_environment": "sensor",
         "watch_vitals": "sensor", "watch_recordings": "sensor",
-        "watch_activity": "processor",
+        "watch_activity": "processor", "watch_orientation": "sensor",
         "watch_haptic": "actuator",
     }
     assert {name for name, x in cfg["plugins"].items() if x.get("enabled")} == set(cards)
@@ -32,7 +32,8 @@ def test_driver_metadata_and_config_consistent():
     assert "FASTRTPS_DEFAULT_PROFILES_FILE=/opt/phanthy-motus/dds-local.xml" in service["environment"]
     assert all((root / name).is_file() for name in [
         "main.py", "device.py", "sensors.py", "motion.py",
-        "environment.py", "metric_cards.py", "activity.py", "vitals.py",
+        "environment.py", "metric_cards.py", "activity.py",
+        "orientation.py", "vitals.py",
         "recordings.py", "haptics.py",
         "transport.py",
         "protocol_v1.py", "protocol_v2.py", "Dockerfile", "requirements.txt"])

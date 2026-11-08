@@ -16,6 +16,8 @@ plugins:
     enabled: true
   watch_activity:
     enabled: true
+  watch_orientation:
+    enabled: true
   watch_recordings:
     enabled: true
   watch_haptic:
