@@ -128,10 +128,13 @@ off-wrist or unconsented command must not vibrate.
 **Companion code dependency:** The companion changes are located at
 `../heart-rate-wear-test/app/src/main/java/com/example/heartrateweartest/`
 (`MainActivity.kt`, `HealthMonitorService.kt`, `GatewayClient.kt`,
-`DeviceStateRepository.kt`). That directory is **not part of the
-company Driver repository**, and this Driver commit does not upload
-the Android sources or an APK. You must build/install the matching
-Standard companion separately after review. An older APK cannot
+`DeviceStateRepository.kt`). That directory is **not part of the company Driver repository**.
+The reproducible source-only diff is preserved in this personal-Fork
+branch as `docs/companion-haptic-optin-2026-11-09.patch`. It has passed
+`git apply --reverse --check` against the locally edited Android
+source. Apply it only to the matching S4 base; do not apply twice.
+No APK or proprietary AAR is uploaded. You must build/install the
+matching Standard companion separately after review. An older APK cannot
 consent to this new actuator, by design.
 
 Testing the Python Card alone does **not** establish live Watch7 ACK

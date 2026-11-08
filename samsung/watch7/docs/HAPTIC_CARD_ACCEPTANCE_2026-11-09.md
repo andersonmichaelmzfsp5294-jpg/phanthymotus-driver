@@ -54,9 +54,12 @@ Local source only (not yet part of the driver GitHub commit):
 - `GatewayClient.kt`: check consent and real wear-state immediately
   before execution, reject a cross-session command, include `session_id`
   in ACK, and drop stale pending ACKs after session changes.
-- The companion is not included in the company Driver repository by
-  design. A separately versioned Android source commit and matching
-  APK installation are required for on-device acceptance.
+- The full companion source is not included in the company Driver
+  repository by design. The four-file source-only diff is retained as
+  `docs/companion-haptic-optin-2026-11-09.patch` in the personal Fork;
+  `git apply --reverse --check` against the locally edited app passed.
+  A separately versioned Android source repository and a matching APK
+  installation are still required for on-device acceptance.
 
 ## Executed verification
 
