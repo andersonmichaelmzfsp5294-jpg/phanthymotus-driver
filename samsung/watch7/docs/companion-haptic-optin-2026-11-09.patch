@@ -1,0 +1,142 @@
+# Watch7 Companion Haptic Opt-in Source Patch (2026-11-09)
+# Apply from heart-rate-wear-test root to the S4 Standard source baseline.
+# Does not include proprietary Samsung SDK, APK, credentials, or signing keys.
+--- a/app/src/main/java/com/example/heartrateweartest/DeviceStateRepository.kt
++++ b/app/src/main/java/com/example/heartrateweartest/DeviceStateRepository.kt
+@@ -65,6 +65,10 @@
+             "watch7_features", Context.MODE_PRIVATE).getBoolean("enable_agent_prompts", false))
+         frame.put("remote_control_enabled", context.getSharedPreferences(
+             "watch7_features", Context.MODE_PRIVATE).getBoolean("enable_remote_control", false))
++        // Explicit, separate opt-in; it must not survive a foreground
++        // monitoring session restart or be inferred from Agent task prompts.
++        frame.put("haptic_enabled", WatchRuntime.active && context.getSharedPreferences(
++            "watch7_features", Context.MODE_PRIVATE).getBoolean("enable_remote_haptics", false))
+         val tts = ttsCapability.snapshot()
+         frame.put("tts_status", tts.optString("status", "engine_initializing"))
+         // Capability enumeration is not offline proof; keep this false until
+--- a/app/src/main/java/com/example/heartrateweartest/GatewayClient.kt
++++ b/app/src/main/java/com/example/heartrateweartest/GatewayClient.kt
+@@ -231,10 +231,11 @@
+         for ((id, state) in pendingAcks.toMap()) {
+             try {
+                 val answer = request("POST", "/v1/ack",
+-                    JSONObject().put("request_id", id).put("state", state))
++                    JSONObject().put("request_id", id).put("state", state)
++                        .put("session_id", session))
+                 val reason = answer.optString("reason")
+                 if (answer.optBoolean("ok") ||
+-                    reason in setOf("not_pending", "expired")) {
++                    reason in setOf("not_pending", "expired", "session_mismatch")) {
+                     pendingAcks.remove(id)
+                     saveAcks()
+                     Log.i(TAG, "HAPTIC_ACK request=$id state=$state")
+@@ -297,7 +298,9 @@
+             val pattern = command.optString("pattern")
+             val expires = command.optLong("expires_at_ms")
+             val taskId = command.optString("task_id")
+-            if (requestId.isEmpty() || requestId in seenRequests) continue
++            val commandSession = command.optString("session_id")
++            if (requestId.isEmpty() || requestId in seenRequests ||
++                (commandSession.isNotEmpty() && commandSession != session)) continue
+             // Server's wall clock and Watch7's wall clock can differ > 3 seconds.
+             // Convert the remaining server lease into local *monotonic* time.
+             // Subtract full request RTT conservatively to avoid late execution.
+@@ -335,7 +338,13 @@
+                 continue
+             }
+             mainHandler.post {
+-                val success = active && pattern in setOf("single", "double", "triple") &&
++                // Last device-side gate: a server-side queue decision cannot
++                // override an on-Watch revocation that happened after polling.
++                val hapticOptIn = features.getBoolean("enable_remote_haptics", false) &&
++                    features.getBoolean("enable_v2", false) &&
++                    SensorRepository.wearState() == "on_body"
++                val success = active && hapticOptIn &&
++                    pattern in setOf("single", "double", "triple") &&
+                     SystemClock.elapsedRealtime() <= deadlineMono && vibrate(pattern)
+                 val state = if (success) "executed" else "rejected"
+                 onStatus("Remote haptic: $state")
+--- a/app/src/main/java/com/example/heartrateweartest/HealthMonitorService.kt
++++ b/app/src/main/java/com/example/heartrateweartest/HealthMonitorService.kt
+@@ -187,6 +187,10 @@
+             return START_STICKY
+         }
+         if (WatchRuntime.active || starting) return START_STICKY
++        // Remote vibration consent belongs to a single user-started service
++        // session. Never silently re-grant it after a process restart.
++        getSharedPreferences("watch7_features", MODE_PRIVATE).edit()
++            .putBoolean("enable_remote_haptics", false).commit()
+         starting = true
+ 
+         if (!hasHealthPermission()) {
+@@ -342,6 +346,8 @@
+     }
+ 
+     override fun onDestroy() {
++        getSharedPreferences("watch7_features", MODE_PRIVATE).edit()
++            .putBoolean("enable_remote_haptics", false).commit()
+         taskNotifications.forEach { promptNotifier.cancel(it) }
+         taskNotifications.clear()
+         WatchRuntime.active = false
+--- a/app/src/main/java/com/example/heartrateweartest/MainActivity.kt
++++ b/app/src/main/java/com/example/heartrateweartest/MainActivity.kt
+@@ -133,7 +133,8 @@
+         val hasSamsung = BuildConfig.HAS_SAMSUNG_SDK
+         val entries = listOf("修改 Driver 地址", "更新配对密钥", "切换 v2 数据上报",
+             "授权/撤销远程采集控制", "三星高级健康测量（研究版）",
+-            "Agent 监测任务授权通知（可关闭）", "授权计步数据")
++            "Agent 监测任务授权通知（可关闭）", "授权计步数据",
++            "授权/撤销当前监测会话的远程振动")
+         // Standard flavor never ships the Samsung measurement Activity.
+         val visibleEntries = if (hasSamsung) entries else entries.filterIndexed { index, _ -> index != 4 }
+         AlertDialog.Builder(this)
+@@ -150,7 +151,9 @@
+                             .putBoolean("enable_remote_control",
+                                 next && features.getBoolean("enable_remote_control", false))
+                             .putBoolean("enable_agent_prompts",
+-                                next && features.getBoolean("enable_agent_prompts", false)).apply()
++                                next && features.getBoolean("enable_agent_prompts", false))
++                            .putBoolean("enable_remote_haptics",
++                                next && features.getBoolean("enable_remote_haptics", false)).apply()
+                         showStatus(if (next) "已开启 v2 实验上报；v1 仍保留" else "已关闭 v2 与远程采集控制")
+                     }
+                     3 -> {
+@@ -176,11 +179,38 @@
+                     )
+                     5 -> toggleAgentPrompts()
+                     6 -> requestActivityRecognition()
++                    7 -> toggleRemoteHaptics()
+                 }
+             }
+             .show()
+     }
+ 
++    private fun toggleRemoteHaptics() {
++        val features = getSharedPreferences("watch7_features", MODE_PRIVATE)
++        if (features.getBoolean("enable_remote_haptics", false)) {
++            features.edit().putBoolean("enable_remote_haptics", false).commit()
++            showStatus("已撤销远程振动授权；待执行请求必须被拒绝")
++            return
++        }
++        if (!WatchRuntime.active) {
++            showStatus("请先在手表亲自开始监测，再授权本次远程振动")
++            return
++        }
++        AlertDialog.Builder(this)
++            .setTitle("授权本次监测的远程振动？")
++            .setMessage("仅允许已配对的受控 Driver 请求短促的单次、两次或三次振动。"
++                + "不会允许远程录音、启动健康测量或控制机器人。"
++                + "每次监测重启后都必须重新授权，可随时在连接设置中撤销。")
++            .setNegativeButton("拒绝", null)
++            .setPositiveButton("本次会话授权") { _, _ ->
++                val saved = features.edit()
++                    .putBoolean("enable_v2", true)
++                    .putBoolean("enable_remote_haptics", true).commit()
++                showStatus(if (saved) "已授权本次会话远程短振动；随时可撤销"
++                    else "授权保存失败，未启用远程振动")
++            }.show()
++    }
++
+     private fun requestActivityRecognition() {
+         if (Build.VERSION.SDK_INT < 29) {
+             showStatus("当前系统不需要单独的计步权限")
