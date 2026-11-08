@@ -14,6 +14,8 @@ plugins:
     enabled: true
   watch_vitals:
     enabled: true
+  watch_activity:
+    enabled: true
   watch_recordings:
     enabled: true
   watch_haptic:

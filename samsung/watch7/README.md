@@ -12,9 +12,13 @@ and a shared read-only metric Card adapter. The third follow-up,
 This further **dependent** personal-Fork branch,
 `feat/watch7-vitals-and-recordings`, adds `watch_vitals` (SDK scalar
 summaries) and `watch_recordings` (PPG manifests only).
-None of these changes are part of company PR #500.
+The next dependent branch, `feat/watch7-activity-card`, adds the
+experimental read-only `watch_activity` Processor and fixes private
+Docker test namespace/MCP identity isolation. None of these changes are
+part of company PR #500.
 
-The six Sensor Cards use `std_msgs/String` JSON on ROS2 domain 42 with
+The six Sensor Cards and one activity Processor use `std_msgs/String`
+JSON on ROS2 domain 42 with
 `data/json`:
 
 - `/{ros_namespace}/watch7/heart_rate`
@@ -23,6 +27,7 @@ The six Sensor Cards use `std_msgs/String` JSON on ROS2 domain 42 with
 - `/{ros_namespace}/watch7/environment`
 - `/{ros_namespace}/watch7/vitals` (SDK summary values only)
 - `/{ros_namespace}/watch7/recordings` (PPG metadata only, opt-in)
+- `/{ros_namespace}/watch7/activity` (experimental motion state)
 
 The ROS namespace defaults to the sanitized hostname. All Sensor `start`
 and `stop` actions **only gate ROS2 publication in the Driver**; they do not
@@ -68,10 +73,11 @@ merely to perform a local acceptance test. For no-push S5 tests, use the
 adjacent project's `scripts/s5_build_local.py` (Docker Buildx `--load`);
 the ARM64 build has passed against the company's ROS base image.
 
-Its Driver image contains Python, ROS2, the six Sensor Card plugins
-and the opt-in `watch_haptic` Actuator. Dependent feature branches
+Its Driver image contains Python, ROS2, six Sensor Card plugins,
+the read-only `watch_activity` Processor and the opt-in `watch_haptic`
+Actuator. Dependent feature branches
 add `motion.py`, `environment.py`, `metric_cards.py`,
-`vitals.py`, `recordings.py` and `haptics.py` without
+`vitals.py`, `recordings.py`, `activity.py` and `haptics.py` without
 adding apt/pip dependencies.
 There is no Android SDK or Samsung proprietary SDK inside the Docker image.
 The host needs the company's `/opt/phanthy-motus/dds-local.xml` loopback
@@ -97,6 +103,32 @@ license terms are not substitutes for an approved production distribution.
 python3 -m pytest samsung/watch7/tests -q
 python3 scripts/check_service_yml.py samsung/watch7
 ```
+
+### `watch_activity` contract — exploratory motion observations
+
+Type: `processor`; actions `info`, `capabilities`, `read`, `start`, `stop`.
+Consumes **only** fresh, validated on-body `motion_score` from the shared
+Watch7 v2 summary cache, with optional cumulative `step_count` for a
+nonnegative bounded inter-sample `step_delta`. A missing or reset step
+counter yields `null` delta, never an invented count.
+
+Algorithm `experimental_threshold_v0`: scores at or below 0.18 m/s²
+are candidates for `still`; scores at or above 0.45 m/s² are candidates
+for `moving`; between them and the first candidate sample returns
+`unknown`. Two consecutive quality-valid same-session samples are
+required before emitting a confirmed state. Hysteresis values are
+**engineering defaults**, not experimentally tuned thresholds. No
+walking/running recognition, fall detection, emotion detection,
+health diagnosis or autonomous robot command is implied. The
+Processor never starts or modifies Watch sensor sampling.
+
+The Card requires a live real `device_state` heartbeat, same Watch
+session, online, collecting and `wear_state=on_body`. No summary,
+unworn state, stale metric or provider mismatch means no new
+activity observation. A cross-session transition resets all confidence
+and step baselines. `stop` gates ROS2 publication while on-Watch
+sampling is unchanged. `read` rejects cached output unless it is from
+the latest valid current-session motion summary.
 
 ### `watch_vitals` contract — SDK summaries
 

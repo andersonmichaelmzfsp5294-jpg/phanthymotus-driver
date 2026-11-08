@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import threading
 from http.server import ThreadingHTTPServer
@@ -19,6 +20,22 @@ from sensors import build_plugins
 from transport import make_device_server
 
 DRIVER_ID = "samsung-watch7-driver"
+
+
+def resolve_mcp_server_name(config: dict) -> str:
+    """Disambiguate parallel private lab Drivers in the real Canvas registry.
+
+    The Core deduplicates MCP providers by server_name, even when URL and
+    display name differ. The production identifier remains unchanged.
+    """
+    override = os.environ.get("WATCH7_TEST_MCP_SERVER_NAME", "").strip()
+    if not override:
+        return config.get("name", DRIVER_ID)
+    if os.environ.get("WATCH7_PRIVATE_DOCKER_TEST") != "1":
+        raise RuntimeError("Custom MCP server name is restricted to private tests")
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{2,63}", override):
+        raise ValueError("Invalid private MCP server name")
+    return override
 
 
 def resolve_mcp_bind_host() -> str:
@@ -37,6 +54,12 @@ def resolve_mcp_bind_host() -> str:
         "Non-loopback MCP requires WATCH7_PRIVATE_DOCKER_TEST=1 "
         "and an unpublished Docker-only bridge endpoint"
     )
+
+
+def resolve_safe_namespace(config: dict) -> str:
+    """ROS2 rejects a topic component beginning with a digit (Docker IDs)."""
+    namespace = resolve_namespace(config)
+    return namespace if re.match(r"^[a-zA-Z_]", namespace) else "watch7_" + namespace
 
 
 def load_device_token() -> str:
@@ -75,7 +98,7 @@ def run() -> None:
 
     # Avoid starting ROS2 or any socket if the required watch credential is missing.
     cfg = load_config()
-    namespace = resolve_namespace(cfg)
+    namespace = resolve_safe_namespace(cfg)
     mcp_port = int(cfg["mcp_port"])
     ingress_port = int(cfg["ingress_port"])
     if not (15700 <= mcp_port <= 15799 and 1 <= ingress_port <= 65535):
@@ -83,6 +106,7 @@ def run() -> None:
     if mcp_port == ingress_port:
         raise ValueError("MCP and Watch ingress ports must differ")
     mcp_bind_host = resolve_mcp_bind_host()
+    server_name = resolve_mcp_server_name(cfg)
 
     from common import logsafe
     logsafe.install()
@@ -111,7 +135,7 @@ def run() -> None:
     plugins: dict[str, object] = {}
 
     def publish_metrics(sample: dict) -> None:
-        for name in ("watch_motion", "watch_environment", "watch_vitals"):
+        for name in ("watch_motion", "watch_environment", "watch_vitals", "watch_activity"):
             plugin = plugins.get(name)
             if plugin is not None:
                 plugin.publish(sample)
@@ -154,7 +178,7 @@ def run() -> None:
         )
         mcp_server = ThreadingHTTPServer(
             (mcp_bind_host, mcp_port),
-            make_handler(lambda: bundle, cfg.get("name", DRIVER_ID), DRIVER_ID),
+            make_handler(lambda: bundle, server_name, DRIVER_ID),
         )
         ingress_thread = threading.Thread(
             target=watch_server.serve_forever, name="watch7-http", daemon=True

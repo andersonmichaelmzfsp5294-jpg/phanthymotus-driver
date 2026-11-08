@@ -91,6 +91,10 @@ def build_plugins(device, namespace: str, publish_factory, config: dict,
         from vitals import VitalsPlugin
         topic = f"/{namespace}/watch7/vitals"
         plugins.append(VitalsPlugin(device, topic, publish_factory(topic)))
+    if enabled.get("watch_activity", {}).get("enabled", False):
+        from activity import ActivityPlugin
+        topic = f"/{namespace}/watch7/activity"
+        plugins.append(ActivityPlugin(device, topic, publish_factory(topic)))
     if enabled.get("watch_recordings", {}).get("enabled", False):
         from recordings import RecordingsPlugin
         topic = f"/{namespace}/watch7/recordings"
