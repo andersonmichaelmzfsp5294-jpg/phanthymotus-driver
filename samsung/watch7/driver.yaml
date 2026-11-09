@@ -6,7 +6,7 @@ hardware_model: "watch7"
 image_name: samsung-watch7
 port: 15750
 mcp_url: "http://localhost:15750/mcp"
-description: "Galaxy Watch7 — six read-only Sensors and one opt-in haptic Actuator (companion APK required)"
+description: "Galaxy Watch7 — Sensor/Processor/Actuator bundle with six opt-in v3 research streams"
 build_context_extras:
   - ../../common
 cards:
@@ -19,3 +19,9 @@ cards:
   - { name: watch_orientation, type: sensor }
   - { name: watch_recordings, type: sensor }
   - { name: watch_haptic, type: actuator }
+  - { name: watch_imu_stream, type: sensor }
+  - { name: watch_ppg_raw, type: sensor }
+  - { name: watch_ecg, type: sensor }
+  - { name: watch_bia, type: sensor }
+  - { name: watch_location, type: sensor }
+  - { name: watch_audio, type: sensor }

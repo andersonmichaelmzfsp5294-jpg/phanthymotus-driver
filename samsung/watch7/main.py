@@ -17,6 +17,8 @@ from common.vendor_runtime import DriverBundle, make_handler, resolve_namespace
 from device import DeviceStore
 from haptics import HapticQueue
 from sensors import build_plugins
+from stream_store import StreamStore
+from stream_protocol import STREAM_TYPES, KIND_TO_CARD
 from transport import make_device_server
 
 DRIVER_ID = "samsung-watch7-driver"
@@ -87,9 +89,9 @@ def load_config(path: str | None = None) -> dict:
 
 
 def create_bundle(device: DeviceStore, namespace: str, publish_factory, config: dict,
-                  haptic_queue=None):
+                  haptic_queue=None, stream_store=None):
     plugins = build_plugins(device, namespace, publish_factory, config,
-                            haptic_queue=haptic_queue)
+                            haptic_queue=haptic_queue, stream_store=stream_store)
     return DriverBundle(plugins), {plugin.name: plugin for plugin in plugins}
 
 
@@ -148,6 +150,23 @@ def run() -> None:
         on_device=lambda sample: plugins.get("device_state") and plugins["device_state"].publish(sample),
         on_metrics=publish_metrics,
     )
+    # Independent, explicit operator gates. Cards are visible even while
+    # all sensitive stream ingestion is disabled by the deployment.
+    flags = {
+        "watch_imu_stream": "WATCH7_IMU_STREAM_ENABLED",
+        "watch_ppg_raw": "WATCH7_PPG_RAW_ENABLED",
+        "watch_ecg": "WATCH7_ECG_ENABLED",
+        "watch_bia": "WATCH7_BIA_ENABLED",
+        "watch_location": "WATCH7_LOCATION_ENABLED",
+        "watch_audio": "WATCH7_AUDIO_ENABLED",
+    }
+    stream_store = StreamStore(
+        enabled={card for card, flag in flags.items() if os.environ.get(flag) == "1"},
+        on_frame=lambda kind, frame: (
+            plugins[KIND_TO_CARD[kind]].publish_frame(kind, frame)
+            if KIND_TO_CARD[kind] in plugins else None
+        ),
+    )
     # A remote command requires both this explicit deployment flag and
     # an opt-in heartbeat from a Watch user in the currently active session.
     ack_topic = f"/{namespace}/watch7/haptic_acks"
@@ -160,7 +179,8 @@ def run() -> None:
         ),
     )
     bundle, plugins = create_bundle(
-        device, namespace, publish_factory, cfg, haptic_queue=haptic_queue
+        device, namespace, publish_factory, cfg, haptic_queue=haptic_queue,
+        stream_store=stream_store
     )
     bundle.start_all()
     executor = SingleThreadedExecutor()
@@ -175,7 +195,7 @@ def run() -> None:
         executor_thread.start()
         watch_server = make_device_server(
             os.environ.get("WATCH7_INGRESS_HOST", cfg.get("ingress_host", "0.0.0.0")),
-            ingress_port, device, token, haptics=haptic_queue
+            ingress_port, device, token, haptics=haptic_queue, streams=stream_store
         )
         mcp_server = ThreadingHTTPServer(
             (mcp_bind_host, mcp_port),

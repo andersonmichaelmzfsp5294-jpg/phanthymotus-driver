@@ -14,6 +14,13 @@ samsung-watch7:
     - WATCH7_HAPTIC_ACTIONS_ENABLED=0
     # Research metadata indexing stays off until separate review/consent.
     - WATCH7_RECORDING_INDEX_ENABLED=0
+    # All raw/high-sensitivity research data planes require separate approval.
+    - WATCH7_IMU_STREAM_ENABLED=0
+    - WATCH7_PPG_RAW_ENABLED=0
+    - WATCH7_ECG_ENABLED=0
+    - WATCH7_BIA_ENABLED=0
+    - WATCH7_LOCATION_ENABLED=0
+    - WATCH7_AUDIO_ENABLED=0
   logging:
     driver: local
     options:

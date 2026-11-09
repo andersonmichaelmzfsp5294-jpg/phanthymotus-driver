@@ -21,6 +21,9 @@ def test_driver_metadata_and_config_consistent():
         "watch_vitals": "sensor", "watch_recordings": "sensor",
         "watch_activity": "processor", "watch_orientation": "sensor",
         "watch_haptic": "actuator",
+        "watch_imu_stream": "sensor", "watch_ppg_raw": "sensor",
+        "watch_ecg": "sensor", "watch_bia": "sensor",
+        "watch_location": "sensor", "watch_audio": "sensor",
     }
     assert {name for name, x in cfg["plugins"].items() if x.get("enabled")} == set(cards)
     service = compose["samsung-watch7"]
@@ -34,6 +37,7 @@ def test_driver_metadata_and_config_consistent():
         "main.py", "device.py", "sensors.py", "motion.py",
         "environment.py", "metric_cards.py", "activity.py",
         "orientation.py", "vitals.py",
-        "recordings.py", "haptics.py",
+        "recordings.py", "haptics.py", "stream_protocol.py",
+        "stream_store.py", "advanced_cards.py",
         "transport.py",
         "protocol_v1.py", "protocol_v2.py", "Dockerfile", "requirements.txt"])

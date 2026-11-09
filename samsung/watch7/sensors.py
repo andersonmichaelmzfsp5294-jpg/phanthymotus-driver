@@ -65,7 +65,7 @@ class SensorPlugin:
 
 
 def build_plugins(device, namespace: str, publish_factory, config: dict,
-                  haptic_queue=None) -> list:
+                  haptic_queue=None, stream_store=None) -> list:
     plugins = []
     specs = [
         ("heart_rate", "Live Watch7 heart-rate Sensor. No data is invented when offline.",
@@ -103,6 +103,13 @@ def build_plugins(device, namespace: str, publish_factory, config: dict,
         from recordings import RecordingsPlugin
         topic = f"/{namespace}/watch7/recordings"
         plugins.append(RecordingsPlugin(device, topic, publish_factory(topic)))
+    if stream_store is not None:
+        from advanced_cards import AdvancedCard
+        from stream_protocol import STREAM_TYPES
+        for card in STREAM_TYPES:
+            if enabled.get(card, {}).get("enabled", False):
+                topic = f"/{namespace}/watch7/{card.removeprefix('watch_')}"
+                plugins.append(AdvancedCard(card, stream_store, topic, publish_factory(topic)))
     if enabled.get("watch_haptic", {}).get("enabled", False) and haptic_queue is not None:
         from haptics import HapticPlugin
         topic = f"/{namespace}/watch7/haptic_acks"

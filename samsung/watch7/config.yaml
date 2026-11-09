@@ -22,3 +22,15 @@ plugins:
     enabled: true
   watch_haptic:
     enabled: true
+  watch_imu_stream:
+    enabled: true
+  watch_ppg_raw:
+    enabled: true
+  watch_ecg:
+    enabled: true
+  watch_bia:
+    enabled: true
+  watch_location:
+    enabled: true
+  watch_audio:
+    enabled: true

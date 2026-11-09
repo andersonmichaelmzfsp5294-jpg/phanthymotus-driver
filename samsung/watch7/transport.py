@@ -1,7 +1,7 @@
-"""Watch7-only authenticated HTTP ingress (no MCP endpoint exposed to Wi-Fi).
+"""Watch7-only authenticated HTTP ingress (no MCP exposed to Wi-Fi).
 
-Unsupported control paths return empty queues or explicit denials. The companion
-App can continue to upload telemetry without thinking there are pending actions.
+Only explicitly enabled, on-Watch-consented v1 short haptics are actionable;
+v2 remote control, task operations and all unrecognized paths fail closed.
 """
 from __future__ import annotations
 
@@ -11,9 +11,10 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MAX_BODY_BYTES = 8191
+MAX_STREAM_BODY_BYTES = 24576
 
 
-def make_device_handler(device, token: str):
+def make_device_handler(device, token: str, *, haptics=None, streams=None):
     if not isinstance(token, str) or len(token) < 16:
         raise ValueError("WATCH7_DEVICE_TOKEN must be at least 16 characters")
 
@@ -50,13 +51,18 @@ def make_device_handler(device, token: str):
                 return
             if self.path == "/v2/task-prompts":
                 return self._reply({"ok": True, "prompts": []})
+            commands = (
+                haptics.poll() if self.path == "/v1/commands" and haptics is not None
+                else []
+            )
             return self._reply({
-                "ok": True, "commands": [], "server_now_ms": int(time.time() * 1000),
+                "ok": True, "commands": commands,
+                "server_now_ms": int(time.time() * 1000),
             })
 
         def do_POST(self):
             if self.path not in (
-                "/v1/telemetry", "/v2/telemetry", "/v1/ack",
+                "/v1/telemetry", "/v2/telemetry", "/v3/telemetry", "/v1/ack",
                 "/v2/ack", "/v2/task-response", "/v2/haptic-authorize",
             ):
                 return self._reply({"ok": False, "reason": "not_found"}, 404)
@@ -64,7 +70,10 @@ def make_device_handler(device, token: str):
                 return
             try:
                 size = int(self.headers.get("Content-Length", "0"))
-                if size <= 0 or size > MAX_BODY_BYTES:
+                if size <= 0 or size > (
+                    MAX_STREAM_BODY_BYTES if self.path == "/v3/telemetry"
+                    else MAX_BODY_BYTES
+                ):
                     return self._reply({"ok": False, "reason": "invalid_body_length"}, 413)
                 payload = json.loads(self.rfile.read(size))
             except (ValueError, TypeError, UnicodeError):
@@ -73,7 +82,13 @@ def make_device_handler(device, token: str):
                 result = device.ingest_v1(payload)
             elif self.path == "/v2/telemetry":
                 result = device.ingest_v2(payload)
-            elif self.path in ("/v1/ack", "/v2/ack"):
+            elif self.path == "/v3/telemetry":
+                result = (streams.ingest(payload) if streams is not None
+                          else {"ok": False, "reason": "stream_disabled"})
+            elif self.path == "/v1/ack":
+                result = (haptics.acknowledge(payload) if haptics is not None
+                          else {"ok": False, "reason": "not_pending"})
+            elif self.path == "/v2/ack":
                 result = {"ok": False, "reason": "not_pending"}
             elif self.path == "/v2/task-response":
                 result = {"ok": False, "reason": "unknown_task"}
@@ -84,5 +99,9 @@ def make_device_handler(device, token: str):
     return Handler
 
 
-def make_device_server(host: str, port: int, device, token: str) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), make_device_handler(device, token))
+def make_device_server(host: str, port: int, device, token: str,
+                       *, haptics=None, streams=None) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer(
+        (host, port), make_device_handler(
+            device, token, haptics=haptics, streams=streams)
+    )
