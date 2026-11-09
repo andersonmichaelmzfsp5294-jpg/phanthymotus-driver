@@ -22,6 +22,8 @@ public final class SamsungV3Export {
     private JSONArray rows = new JSONArray();
     private long firstTs = -1;
     private long lastTs = -1;
+    private long lastAcceptedTs = -1;
+    private boolean biaEmitted = false;
 
     public SamsungV3Export(Listener sink) { this.sink = sink; }
 
@@ -33,6 +35,8 @@ public final class SamsungV3Export {
         rows = new JSONArray();
         firstTs = -1;
         lastTs = -1;
+        lastAcceptedTs = -1;
+        biaEmitted = false;
     }
 
     public void sample(HealthTrackerType type, DataPoint point, Integer ecgLead) {
@@ -42,7 +46,7 @@ public final class SamsungV3Export {
         }
         if (kind == null || point == null) return;
         long ts = point.getTimestamp();
-        if (ts <= lastTs || ts < 0) return;
+        if (ts <= lastAcceptedTs || ts < 0) return;
         JSONArray row = new JSONArray();
         if ("ppg_chunk".equals(kind)) {
             Number green = goodPpg(point, ValueKey.PpgSet.PPG_GREEN,
@@ -71,6 +75,7 @@ public final class SamsungV3Export {
         } else return;
         rows.put(row);
         lastTs = ts;
+        lastAcceptedTs = ts;
         if (rows.length() >= 48) flush();
     }
 
@@ -101,6 +106,7 @@ public final class SamsungV3Export {
     }
 
     private void emitCompleteBia(DataPoint point) {
+        if (biaEmitted) return;
         Integer status = get(point, ValueKey.BiaSet.STATUS);
         Number progress = get(point, ValueKey.BiaSet.PROGRESS);
         if (status == null || status != 0 || progress == null
@@ -116,6 +122,7 @@ public final class SamsungV3Export {
         try {
             sink.onChunk("bia_result", new JSONObject()
                 .put("recording_id", recordingId).put("stats", stats));
+            biaEmitted = true;
         } catch (org.json.JSONException ignored) {
             // A malformed local result must never become a network payload.
         }

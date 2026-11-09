@@ -79,7 +79,7 @@ The latest Research APK was compiled **locally**, without installation:
 python -X utf8 -B build_s4.py --variant research --offline
 # S4_BUILD_SUCCESS research
 # app/build/outputs/apk/research/debug/app-research-debug.apk
-# SHA-256 bcc227b5ed59ef3095089ea6e7beaa2cbfa836770c9ef366227f5d374dea47b9
+# SHA-256 a4c926e9290ee8ee230bed914d4edaa1f6ff4524300d713334ad8d2bf6ca2cdf
 ```
 
 No physical Watch7 recording, APK installation, live Linux Agent Core
