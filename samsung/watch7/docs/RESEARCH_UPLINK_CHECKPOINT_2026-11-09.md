@@ -96,6 +96,15 @@ skin-temperature value is skin/object temperature, not core-body temperature.
   mark individual channels invalid. Before statistical use, track
   status-validated per-channel counts and actual per-channel sampling
   intervals; do not claim three equal valid channels from global rows.
+* **On-demand vitals visibility:** the first Research uploader sends an
+  inactive device_state shortly after a completed SpO2/temperature
+  measurement. The current Driver `metric_snapshot` requires a
+  `collecting=true` heartbeat, so `watch_vitals.read` may become
+  unavailable before a human opens Dashboard. An accepted v2 summary
+  during measurement is not proof of a durable post-measurement Card
+  result. A separate, explicitly consented, TTL-bounded result window
+  with its own state contract is needed; do not silently keep a
+  measurement session active after SDK collection stops.
 * **Manifest after capture:** the Driver's opt-in session gate
   intentionally clears its index when the Research uploader sends its
   terminal offline/idle heartbeat. The ROS2 event can be observed
