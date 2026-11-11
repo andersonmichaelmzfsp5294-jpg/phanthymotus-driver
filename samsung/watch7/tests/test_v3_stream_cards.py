@@ -1,4 +1,4 @@
-"""Six v3 Watch7 cards: bounded payload, consents, auth and MCP/ROS isolation.
+"""Opt-in v3 Watch7 cards: bounded payload, consents, auth and MCP/ROS isolation.
 
 Synthetic fixtures only. These checks do not claim real SDK/Android capture.
 """
@@ -15,7 +15,7 @@ from advanced_cards import AdvancedCard
 from common.vendor_runtime import DriverBundle, make_handler
 from device import DeviceStore
 from sensors import build_plugins
-from stream_protocol import STREAM_TYPES, validate_v3
+from stream_protocol import STREAM_TYPES, KIND_TO_CARD, validate_v3
 from stream_store import StreamStore
 from transport import make_device_server
 
@@ -64,11 +64,20 @@ def frame(clock,kind,seq=0,session="s1"):
         f.update(encoding="pcm_s16le_mono",sample_rate_hz=8000,
                  duration_ms=10,recording_id="audio01",
                  pcm_b64=base64.b64encode(b"\x01\x00"*80).decode())
+    elif kind=="step_events":
+        f.update(samples=[[0],[350],[720]],
+                 window_started_at_ms=clock.wall-720,
+                 window_ended_at_ms=clock.wall)
+    elif kind=="sweat_loss_result":
+        f.update(exercise_type="running",provider="samsung_sdk",
+                 sdk_status=0,sweat_loss_ml=215.0,
+                 exercise_duration_ms=480000,spm_samples=360,
+                 distance_m=2200.0)
     return f
 
 
 @pytest.mark.parametrize("card,kind",list(STREAM_TYPES.items()))
-def test_all_six_accept_only_double_gated_data(card,kind):
+def test_all_cards_accept_only_double_gated_data(card,kind):
     c=Clock()
     events=[]
     store=StreamStore(enabled={card},wall_ms=lambda:c.wall,mono_ms=lambda:c.mono,
@@ -87,7 +96,7 @@ def test_all_six_accept_only_double_gated_data(card,kind):
 
 
 @pytest.mark.parametrize("card,kind",list(STREAM_TYPES.items()))
-def test_all_six_operator_default_off(card,kind):
+def test_all_cards_operator_default_off(card,kind):
     c=Clock()
     store=StreamStore(wall_ms=lambda:c.wall,mono_ms=lambda:c.mono)
     assert store.ingest(state(c,grants=[card]))["ok"]
@@ -123,6 +132,42 @@ def test_v3_invalid_waveform_sizes_nonmonotonic_and_unknown_keys():
         validate_v3(bad,now_ms=c.wall)
 
 
+def test_step_events_reject_duplicate_offsets_and_fake_time():
+    c=Clock()
+    frame0=frame(c,"step_events")
+    frame0["samples"]=[[0],[0]]
+    with pytest.raises(ValueError,match="nonmonotonic_steps"):
+        validate_v3(frame0,now_ms=c.wall)
+    frame0=frame(c,"step_events")
+    frame0["window_started_at_ms"]=c.wall-200000
+    with pytest.raises(ValueError,match="invalid_step_window"):
+        validate_v3(frame0,now_ms=c.wall)
+
+
+def test_sweat_sdk_status_never_invents_measured_milliliters():
+    c=Clock()
+    valid=frame(c,"sweat_loss_result")
+    assert validate_v3(valid,now_ms=c.wall)["sweat_loss_ml"]==215.0
+    bad=dict(valid,sdk_status=1)
+    with pytest.raises(ValueError,match="unreliable_sweat_value"):
+        validate_v3(bad,now_ms=c.wall)
+    bad=dict(valid,sdk_status=1,sweat_loss_ml=None)
+    assert validate_v3(bad,now_ms=c.wall)["sweat_loss_ml"] is None
+    assert "duration_under_5_minutes" in validate_v3(
+        dict(bad, sdk_status=1),now_ms=c.wall)["status_reasons"]
+    assert "mean_spm_at_most_110" in validate_v3(
+        dict(bad, sdk_status=64),now_ms=c.wall)["status_reasons"]
+    assert validate_v3(dict(bad, sdk_status=-4),
+                       now_ms=c.wall)["status_reasons"] == [
+        "another_sweat_tracker_preempted"]
+    bad=dict(valid,exercise_duration_ms=90000)
+    with pytest.raises(ValueError,match="insufficient_running_evidence"):
+        validate_v3(bad,now_ms=c.wall)
+    bad=dict(valid,provider="android")
+    with pytest.raises(ValueError,match="invalid_sweat_provider"):
+        validate_v3(bad,now_ms=c.wall)
+
+
 def test_invalid_consent_replay_session_expiry_and_bound():
     c=Clock()
     card="watch_imu_stream"
@@ -143,7 +188,7 @@ def test_invalid_consent_replay_session_expiry_and_bound():
     assert store.snapshot(card)["reason"]=="no_stream_samples"
 
 
-def test_all_six_cards_mcp_contract_ros_redacts_sensitive_samples():
+def test_all_cards_mcp_contract_ros_redacts_sensitive_samples():
     c=Clock()
     sent={}
     cards={}
@@ -152,16 +197,13 @@ def test_all_six_cards_mcp_contract_ros_redacts_sensitive_samples():
         return sent[topic].append
     store=StreamStore(enabled=set(STREAM_TYPES),wall_ms=lambda:c.wall,
         mono_ms=lambda:c.mono,on_frame=lambda kind,frame:
-            cards[{"imu_window":"watch_imu_stream","ppg_chunk":"watch_ppg_raw",
-                   "ecg_chunk":"watch_ecg","bia_result":"watch_bia",
-                   "location_fix":"watch_location","audio_chunk":"watch_audio"}[kind]]
-                   .publish_frame(kind,frame))
+            cards[KIND_TO_CARD[kind]].publish_frame(kind,frame))
     bundle=DriverBundle(build_plugins(DeviceStore(),"lab",factory,{
         "plugins":{card:{"enabled":True} for card in STREAM_TYPES}
     },stream_store=store))
     cards.update({p.name:p for p in bundle.plugins})
     bundle.start_all()
-    assert len(bundle.get_all_tools())==6
+    assert len(bundle.get_all_tools())==len(STREAM_TYPES)
     assert set(cards)==set(STREAM_TYPES)
     assert store.ingest(state(c,grants=list(STREAM_TYPES)))["ok"]
     for kind in STREAM_TYPES.values():
@@ -177,6 +219,7 @@ def test_all_six_cards_mcp_contract_ros_redacts_sensitive_samples():
         assert len(sent[f"/lab/watch7/{name[6:]}"])==1
         onbus=json.loads(sent[f"/lab/watch7/{name[6:]}"][0])
         assert "samples" not in onbus and "pcm_b64" not in onbus
+        assert "sweat_loss_ml" not in onbus
         assert bundle.dispatch(name,{"action":"stop"})[
             "watch_capture_unchanged"] is True
 

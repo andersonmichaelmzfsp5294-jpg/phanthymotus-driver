@@ -18,11 +18,33 @@ STREAM_TYPES = {
     "watch_bia": "bia_result",
     "watch_location": "location_fix",
     "watch_audio": "audio_chunk",
+    "watch_step_detector": "step_events",
+    "watch_sweat_loss": "sweat_loss_result",
 }
 KIND_TO_CARD = {v: k for k, v in STREAM_TYPES.items()}
 RAW_TYPES = frozenset(("watch_ppg_raw", "watch_ecg", "watch_audio"))
 MAX_V3_BYTES = 24576
 MAX_AGE_MS = 30000
+
+# Samsung SweatLossSet.STATUS bit field (official SDK documentation).
+SWEAT_STATUS_BITS = (
+    "duration_under_5_minutes",
+    "distance_under_2km_or_energy_at_most_90kcal",
+    "estimated_loss_under_100ml",
+    "over_20pct_zero_hr",
+    "over_20pct_zero_spm",
+    "estimator_not_initialized",
+    "mean_spm_at_most_110",
+)
+SWEAT_NEGATIVE_STATUSES = {
+    -10: "ppg_signal_too_weak",
+    -8: "ppg_signal_weak",
+    -4: "another_sweat_tracker_preempted",
+    -3: "wearable_detached",
+    -2: "unknown_sweat_error",
+    -1: "accelerometer_accuracy_low",
+}
+
 
 
 def numeric(value, name, minimum, maximum):
@@ -65,6 +87,8 @@ def validate_v3(frame, now_ms=None):
         "stats", "lat", "lon", "accuracy_m", "provider", "speed_m_s",
         "altitude_m", "encoding", "sample_count", "pcm_b64", "duration_ms",
         "window_started_at_ms", "window_ended_at_ms",
+        "exercise_duration_ms", "distance_m", "sweat_loss_ml",
+        "sdk_status", "spm_samples", "exercise_type",
     }
     if set(frame) - allowed:
         raise ValueError("unsupported_fields")
@@ -86,7 +110,7 @@ def validate_v3(frame, now_ms=None):
         if type(frame.get("online")) is not bool or type(frame.get("collecting")) is not bool:
             raise ValueError("invalid_stream_state")
         grants = frame.get("enabled_streams")
-        if (not isinstance(grants, list) or len(grants)>6
+        if (not isinstance(grants, list) or len(grants)>len(STREAM_TYPES)
                 or len(set(map(str, grants)))!=len(grants)
                 or any(x not in STREAM_TYPES for x in grants)):
             raise ValueError("invalid_stream_permissions")
@@ -139,6 +163,59 @@ def validate_v3(frame, now_ms=None):
             out.update(window_started_at_ms=start, window_ended_at_ms=end)
         if kind in ("ppg_chunk","ecg_chunk"):
             out["recording_id"]=identity(frame.get("recording_id"),"recording_id")
+        return out
+    if kind=="step_events":
+        samples = frame.get("samples")
+        if not isinstance(samples, list) or not 1 <= len(samples) <= 64:
+            raise ValueError("invalid_step_event_count")
+        previous = -1
+        clean_samples = []
+        for sample in samples:
+            if not isinstance(sample, list) or len(sample) != 1:
+                raise ValueError("invalid_step_timestamp")
+            offset = integer(sample[0], "step_offset", 0, 30000)
+            if offset <= previous:
+                raise ValueError("nonmonotonic_steps")
+            previous = offset
+            clean_samples.append([offset])
+        start = integer(frame.get("window_started_at_ms"), "window_start", 0, 2**63-1)
+        end = integer(frame.get("window_ended_at_ms"), "window_end", 0, 2**63-1)
+        if (start > end or start < now-MAX_AGE_MS or end > ts+5000
+                or end < ts-MAX_AGE_MS
+                or clean_samples[-1][0] > end-start+50):
+            raise ValueError("invalid_step_window")
+        out.update(samples=clean_samples, sample_count=len(clean_samples),
+                   window_started_at_ms=start, window_ended_at_ms=end)
+        return out
+    if kind=="sweat_loss_result":
+        if frame.get("exercise_type") != "running":
+            raise ValueError("unsupported_exercise")
+        status = integer(frame.get("sdk_status"), "sweat_sdk_status", -10, 127)
+        duration = integer(frame.get("exercise_duration_ms"), "duration", 0, 4*3600*1000)
+        points = integer(frame.get("spm_samples"), "spm_samples", 0, 200000)
+        distance = frame.get("distance_m")
+        if distance is not None:
+            distance = numeric(distance, "distance_m", 0, 100000)
+        value = frame.get("sweat_loss_ml")
+        if status == 0:
+            if duration < 300000 or points == 0 or value is None:
+                raise ValueError("insufficient_running_evidence")
+            value = numeric(value, "sweat_loss_ml", 0.1, 10000)
+        elif value is not None:
+            raise ValueError("unreliable_sweat_value")
+        if frame.get("provider") != "samsung_sdk":
+            raise ValueError("invalid_sweat_provider")
+        out.update(exercise_type="running", sdk_status=status,
+                   exercise_duration_ms=duration, spm_samples=points,
+                   sweat_loss_ml=value, provider="samsung_sdk")
+        if distance is not None:
+            out["distance_m"] = distance
+        out["status_reasons"] = (
+            [SWEAT_NEGATIVE_STATUSES.get(status, "unknown_sweat_error")]
+            if status < 0 else
+            [label for bit, label in enumerate(SWEAT_STATUS_BITS)
+             if status & (1 << bit)] if status > 0 else []
+        )
         return out
     if kind=="bia_result":
         stats=frame.get("stats")

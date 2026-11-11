@@ -9,5 +9,8 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <application>
         <activity android:name=".SamsungMeasurementActivity" android:exported="false" />
+        <service android:name=".ResearchSweatKeepAliveService"
+                 android:exported="false"
+                 android:foregroundServiceType="health" />
     </application>
 </manifest>

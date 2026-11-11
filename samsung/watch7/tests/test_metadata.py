@@ -24,6 +24,7 @@ def test_driver_metadata_and_config_consistent():
         "watch_imu_stream": "sensor", "watch_ppg_raw": "sensor",
         "watch_ecg": "sensor", "watch_bia": "sensor",
         "watch_location": "sensor", "watch_audio": "sensor",
+        "watch_step_detector": "sensor", "watch_sweat_loss": "sensor",
     }
     assert {name for name, x in cfg["plugins"].items() if x.get("enabled")} == set(cards)
     service = compose["samsung-watch7"]
@@ -32,6 +33,8 @@ def test_driver_metadata_and_config_consistent():
     assert "ROS_DOMAIN_ID=42" in service["environment"]
     assert "WATCH7_HAPTIC_ACTIONS_ENABLED=0" in service["environment"]
     assert "WATCH7_RECORDING_INDEX_ENABLED=0" in service["environment"]
+    assert "WATCH7_STEP_DETECTOR_ENABLED=0" in service["environment"]
+    assert "WATCH7_SWEAT_LOSS_ENABLED=0" in service["environment"]
     assert "FASTRTPS_DEFAULT_PROFILES_FILE=/opt/phanthy-motus/dds-local.xml" in service["environment"]
     assert all((root / name).is_file() for name in [
         "main.py", "device.py", "sensors.py", "motion.py",

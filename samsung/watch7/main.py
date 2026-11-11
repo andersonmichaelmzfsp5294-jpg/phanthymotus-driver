@@ -159,6 +159,8 @@ def run() -> None:
         "watch_bia": "WATCH7_BIA_ENABLED",
         "watch_location": "WATCH7_LOCATION_ENABLED",
         "watch_audio": "WATCH7_AUDIO_ENABLED",
+        "watch_step_detector": "WATCH7_STEP_DETECTOR_ENABLED",
+        "watch_sweat_loss": "WATCH7_SWEAT_LOSS_ENABLED",
     }
     stream_store = StreamStore(
         enabled={card for card, flag in flags.items() if os.environ.get(flag) == "1"},

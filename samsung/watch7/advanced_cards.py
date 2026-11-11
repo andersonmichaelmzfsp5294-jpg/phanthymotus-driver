@@ -1,4 +1,4 @@
-"""Six read-only Watch7 research sensor Cards backed by one gated data plane."""
+"""Read-only Watch7 research sensor Cards backed by one gated data plane."""
 from __future__ import annotations
 
 import json
@@ -12,6 +12,8 @@ CARD_TEXT={
     "watch_bia":"Explicit on-Watch BIA completed result; implant contraindication gate.",
     "watch_location":"GPS position fixes with explicit on-Watch location permission.",
     "watch_audio":"Short user-triggered PCM microphone chunks; no always-on listening.",
+    "watch_step_detector":"Per-step event timestamps from Android TYPE_STEP_DETECTOR; not cumulative count.",
+    "watch_sweat_loss":"Samsung SDK run-only estimated sweat loss with status and exercise evidence.",
 }
 
 
@@ -64,7 +66,7 @@ class AdvancedCard(SensorPlugin):
         # consent-gated MCP reads: remove raw waveforms, PCM, exact location
         # and BIA body-composition measurements from the event envelope.
         private_fields = {"samples", "pcm_b64", "stats", "lat", "lon",
-                          "speed_m_s", "altitude_m"}
+                          "speed_m_s", "altitude_m", "sweat_loss_ml"}
         view = {k: v for k, v in frame.items() if k not in private_fields}
         view["data_redacted_on_ros2"] = True
         super().publish(view)

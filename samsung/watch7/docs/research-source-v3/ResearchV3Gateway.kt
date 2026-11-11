@@ -28,13 +28,16 @@ class ResearchV3Gateway(
     private val ui = Handler(Looper.getMainLooper())
     private val allowed = setOf(
         "watch_imu_stream", "watch_ppg_raw", "watch_ecg",
-        "watch_bia", "watch_location", "watch_audio"
+        "watch_bia", "watch_location", "watch_audio",
+        "watch_step_detector", "watch_sweat_loss"
     )
     private val kinds = mapOf(
         "imu_window" to "watch_imu_stream",
         "ppg_chunk" to "watch_ppg_raw", "ecg_chunk" to "watch_ecg",
         "bia_result" to "watch_bia", "location_fix" to "watch_location",
-        "audio_chunk" to "watch_audio"
+        "audio_chunk" to "watch_audio",
+        "step_events" to "watch_step_detector",
+        "sweat_loss_result" to "watch_sweat_loss"
     )
     private var session = UUID.randomUUID().toString()
     private val seq = mutableMapOf<String, Long>()

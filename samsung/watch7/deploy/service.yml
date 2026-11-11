@@ -21,6 +21,8 @@ samsung-watch7:
     - WATCH7_BIA_ENABLED=0
     - WATCH7_LOCATION_ENABLED=0
     - WATCH7_AUDIO_ENABLED=0
+    - WATCH7_STEP_DETECTOR_ENABLED=0
+    - WATCH7_SWEAT_LOSS_ENABLED=0
   logging:
     driver: local
     options:

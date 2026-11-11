@@ -34,3 +34,7 @@ plugins:
     enabled: true
   watch_audio:
     enabled: true
+  watch_step_detector:
+    enabled: true
+  watch_sweat_loss:
+    enabled: true

@@ -36,6 +36,8 @@ class SamsungMeasurementActivity : Activity() {
     private lateinit var imu: ResearchImuCapture
     private lateinit var location: ResearchLocationCapture
     private lateinit var audio: ResearchAudioCapture
+    private lateinit var step: ResearchStepDetectorCapture
+    private lateinit var sweat: ResearchSweatRun
     private lateinit var v3OptIn: CheckBox
     private val uiHandler = Handler(Looper.getMainLooper())
     private var researchActive = false
@@ -85,6 +87,12 @@ class SamsungMeasurementActivity : Activity() {
         audio = ResearchAudioCapture(this, v3,
             { message -> runOnUiThread { setState(message) } },
             { v3.stop() })
+        step = ResearchStepDetectorCapture(this, v3) { message ->
+            runOnUiThread { setState(message) }
+        }
+        sweat = ResearchSweatRun(this, v3,
+            { message -> runOnUiThread { setState(message) } },
+            { runOnUiThread { v3OptIn.isEnabled = true } })
         offBody = OffBodyReader(this) { state ->
             telemetry.updateWear(state)
             v3.updateWear(state)
@@ -92,6 +100,8 @@ class SamsungMeasurementActivity : Activity() {
                 runOnUiThread {
                     imu.stop()
                     audio.stop()
+                    if (::step.isInitialized) step.stop()
+                    if (::sweat.isInitialized) sweat.close()
                     if (::bridge.isInitialized && bridge.isMeasuring())
                         bridge.stop("watch_not_worn")
                 }
@@ -112,7 +122,7 @@ class SamsungMeasurementActivity : Activity() {
         panel.addView(scalarOptIn)
         panel.addView(ppgIndexOptIn)
         v3OptIn = CheckBox(this).apply {
-            text = "仅本次测量上传：IMU / PPG原始值 / ECG / BIA / GPS / 麦克风；请确认数据敏感性"
+            text = "仅本次数据授权：IMU / PPG / ECG / BIA / GPS / 音频 / 步伐事件 / 跑步汗液估计"
             isChecked = false
             textSize = 11f
         }
@@ -177,6 +187,26 @@ class SamsungMeasurementActivity : Activity() {
                 } else v3.stop()
             }
         }
+        button(panel, "逐步事件采集 60秒") {
+            if (checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) !=
+                PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.ACTIVITY_RECOGNITION), 7201)
+                setState("请授权运动识别后再次点击逐步检测")
+            } else if (prepareResearch("watch_step_detector")) {
+                if (step.start()) {
+                    uiHandler.postDelayed({
+                        step.stop()
+                        v3.stop()
+                        v3OptIn.isChecked = false
+                    }, 60_000)
+                } else v3.stop()
+            }
+        }
+        button(panel, "跑步汗液流失估计：开始") { showSweatStart() }
+        button(panel, "结束跑步并获取汗液估计") {
+            if (!sweat.finishExercise())
+                setState("当前没有可结束的跑步采集")
+        }
         button(panel, "GPS 单次定位") {
             if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) !=
                 PackageManager.PERMISSION_GRANTED) {
@@ -197,7 +227,9 @@ class SamsungMeasurementActivity : Activity() {
         }
         button(panel, "停止并保存") {
             imu.stop()
+            step.stop()
             audio.stop()
+            if (sweat.isBusy()) sweat.close()
             bridge.stop("stopped_by_user")
             v3.stop()
             v3OptIn.isChecked = false
@@ -210,7 +242,8 @@ class SamsungMeasurementActivity : Activity() {
 
     private fun prepareResearch(card: String): Boolean {
         if (WatchRuntime.collecting || bridge.isMeasuring() ||
-            audio.isRecording() || v3.isActive()) {
+            audio.isRecording() || step.isCapturing() ||
+            sweat.isBusy() || imu.isCapturing() || v3.isActive()) {
             setState("请先结束正在运行的监测或测量")
             return false
         }
@@ -227,7 +260,8 @@ class SamsungMeasurementActivity : Activity() {
     }
 
     private fun requestMeasurement(type: HealthTrackerType) {
-        if (WatchRuntime.collecting || imu.isCapturing() || audio.isRecording() || v3.isActive()) {
+        if (WatchRuntime.collecting || imu.isCapturing() || audio.isRecording() ||
+            step.isCapturing() || sweat.isBusy() || v3.isActive()) {
             setState("请先停止基础监测、研究采集或其他已授权会话。")
             return
         }
@@ -265,9 +299,81 @@ class SamsungMeasurementActivity : Activity() {
         }
     }
 
+    private fun showSweatStart() {
+        if (WatchRuntime.collecting || bridge.isMeasuring() ||
+            imu.isCapturing() || step.isCapturing() ||
+            audio.isRecording() || v3.isActive() || sweat.isBusy()) {
+            setState("请先停止其他测量或正在进行的运动")
+            return
+        }
+        if (!bridge.isSupported(HealthTrackerType.SWEAT_LOSS)) {
+            setState("三星 SDK 当前未报告 SWEAT_LOSS 能力")
+            return
+        }
+        val permissions = arrayOf(
+            Manifest.permission.ACTIVITY_RECOGNITION,
+            "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA")
+        val missing = permissions.filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            requestPermissions(missing.toTypedArray(), 7202)
+            setState("请授权运动识别及三星健康权限后重新开始")
+            return
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(14, 8, 14, 8)
+        }
+        val fields = listOf("身高 cm", "体重 kg", "年龄（周岁）").map { title ->
+            EditText(this).apply {
+                hint = title
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                form.addView(this)
+            }
+        }
+        val gender = Spinner(this)
+        gender.adapter = ArrayAdapter(this,
+            android.R.layout.simple_spinner_dropdown_item, listOf("女", "男"))
+        form.addView(gender)
+        val acknowledge = CheckBox(this).apply {
+            text = "本人确认开始独立跑步记录；至少5分钟的真实跑步，其他App正在记录时不覆盖。汗液流失为SDK估算。"
+            isChecked = false
+            textSize = 11f
+        }
+        form.addView(acknowledge)
+        AlertDialog.Builder(this)
+            .setTitle("跑步汗液流失估计（Samsung SDK）")
+            .setView(form)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("本人开始跑步") { _, _ ->
+                val height = fields[0].text.toString().toFloatOrNull()
+                val weight = fields[1].text.toString().toFloatOrNull()
+                val age = fields[2].text.toString().toIntOrNull()
+                if (!acknowledge.isChecked || height == null || height !in 100f..230f ||
+                    weight == null || weight !in 25f..250f ||
+                    age == null || age !in 20..100) {
+                    setState("输入资料或跑步确认未满足，未启动")
+                    return@setPositiveButton
+                }
+                val profile = TrackerUserProfile.Builder()
+                    .setHeight(height).setWeight(weight).setAge(age)
+                    .setGender(gender.selectedItemPosition).build()
+                val authorized = v3OptIn.isChecked
+                if (sweat.start(profile, authorized)) {
+                    v3OptIn.isChecked = false
+                    v3OptIn.isEnabled = false
+                } else {
+                    setState("无法启动本次跑步记录")
+                }
+            }.show()
+    }
+
     private fun showBiaConsent() {
         if (WatchRuntime.collecting || bridge.isMeasuring() ||
-            imu.isCapturing() || audio.isRecording() || v3.isActive()) {
+            imu.isCapturing() || audio.isRecording() || step.isCapturing() ||
+            sweat.isBusy() || v3.isActive()) {
             setState("请先停止其他正在进行的采集。")
             return
         }
@@ -354,6 +460,8 @@ class SamsungMeasurementActivity : Activity() {
     override fun onDestroy() {
         uiHandler.removeCallbacksAndMessages(null)
         imu.stop()
+        step.stop()
+        sweat.close()
         audio.close()
         offBody.stop()
         bridge.close()
