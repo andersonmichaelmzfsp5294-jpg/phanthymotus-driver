@@ -9,7 +9,7 @@
   },
   "companion": {
     "local_repository": "heart-rate-wear-test",
-    "local_commit": "73d04d964bbf2bdca6ddfa49fcbd4e6bbab4ac64",
+    "local_commit": "41ebd0fd99271a0615b8dd16332c862d48beed76",
     "local_tag": "watch7-r17-source-20261111",
     "remote_repository": null,
     "source_count": 52,
@@ -17,10 +17,11 @@
       "standard",
       "research"
     ],
-    "source_archive_sha256": "d52f67d4995d244cc2b31b0c212e6ca9f786cac3e7ee4882419df87a3da91749",
-    "git_bundle_sha256": "adedbd392461f867743933c7a9d715b988b6c6aabe57627e010bf1d22cd02c6a",
+    "source_archive_sha256": "32c5473c4ddc80d21f1d9d0ee43c537fabee4040f34342a381101d08fc15a103",
+    "git_bundle_sha256": "30939d5a46105c3da6464d2b055001a790c1ad6cda9f26e3562633179022b580",
     "dependency_lock": "app/gradle.lockfile",
-    "proprietary_samsung_aar": "not in archive"
+    "proprietary_samsung_aar": "not in archive",
+    "samsung_sdk_aar_sha256_expected": "893cd5d6564db0f304bf511a555c1d65ca6bccc8475fc979ff1d71d50680344c"
   },
   "source_validation": {
     "driver_pytest": "80 passed",
