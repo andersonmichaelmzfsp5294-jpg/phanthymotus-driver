@@ -11,7 +11,7 @@
     "local_repository": "heart-rate-wear-test",
     "local_commit": "41ebd0fd99271a0615b8dd16332c862d48beed76",
     "local_tag": "watch7-r17-source-20261111",
-    "remote_repository": null,
+    "remote_repository": "andersonmichaelmzfsp5294-jpg/WACTH-7-APK",
     "source_count": 52,
     "variants": [
       "standard",
@@ -21,7 +21,11 @@
     "git_bundle_sha256": "30939d5a46105c3da6464d2b055001a790c1ad6cda9f26e3562633179022b580",
     "dependency_lock": "app/gradle.lockfile",
     "proprietary_samsung_aar": "not in archive",
-    "samsung_sdk_aar_sha256_expected": "893cd5d6564db0f304bf511a555c1d65ca6bccc8475fc979ff1d71d50680344c"
+    "samsung_sdk_aar_sha256_expected": "893cd5d6564db0f304bf511a555c1d65ca6bccc8475fc979ff1d71d50680344c",
+    "remote_commit": "41ebd0fd99271a0615b8dd16332c862d48beed76",
+    "remote_branch": "main",
+    "remote_tag": "watch7-r17-source-20261111",
+    "remote_visibility": "public"
   },
   "source_validation": {
     "driver_pytest": "80 passed",
@@ -32,7 +36,10 @@
     "restored_standard_build": "pass",
     "restored_research_build": "pass",
     "restored_git_bundle_checkout": "pass",
-    "bitwise_debug_apk_equivalence": "not established (debug APK SHA differs)"
+    "bitwise_debug_apk_equivalence": "not established (debug APK SHA differs)",
+    "remote_main_verified": true,
+    "remote_tag_verified": true,
+    "remote_source_file_count": 52
   },
-  "notes": "Driver is in personal fork; full Android source Git history and archives exist locally. A separate private GitHub repository has not been created or pushed."
+  "notes": "Complete Android Companion repository and annotated r17 tag have been pushed and verified on GitHub. Public visibility was user-created; proprietary Samsung AAR/APK and credentials remain excluded."
 }

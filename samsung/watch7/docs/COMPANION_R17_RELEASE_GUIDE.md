@@ -25,11 +25,13 @@ or provide the SDK AAR and build `--variant research`.
 Standard/Research offline builds passed on the original Windows machine;
 a clean new system still needs Gradle/Android/JDK dependencies.
 
-**Remote limitation:** An independent GitHub Companion repository has
-not yet been created. The personal Fork contains the cross-lock and
-prior source snapshots, while the **complete Android Git history is
-currently in the local bundle only**. Do not label the Companion as
-cloud-backed until a private remote is created and its tag/commit verified.
+**Remote limitation:** The Android Companion GitHub repository is
+`https://github.com/andersonmichaelmzfsp5294-jpg/WACTH-7-APK` (currently PUBLIC). The independent Android Companion GitHub repository is now online and
+verified at https://github.com/andersonmichaelmzfsp5294-jpg/WACTH-7-APK. Its `main` commit and annotated
+`watch7-r17-source-20261111` tag both resolve to
+`41ebd0fd99271a0615b8dd16332c862d48beed76`.
+The repository has **public** visibility; ensure intended sharing and
+change visibility in GitHub Settings if this was accidental.
 
 **Acceptance:** Driver 80 local tests passed; the new advanced Watch7
 sensor data has not all completed real Watch7 → Driver → Agent Core
@@ -52,3 +54,15 @@ Detailed local-only evidence:
 `../archive/watch7-r17-source-20261111/RESTORE_BUILD_VERIFICATION.json`.
 This evidence doesn't establish any of the 17 sensors' physical Watch7 or
 Agent Core/Bumi end-to-end functionality.
+
+
+## GitHub remote push verification (2026-11-11)
+
+- Remote: https://github.com/andersonmichaelmzfsp5294-jpg/WACTH-7-APK
+- Main HEAD: `41ebd0fd99271a0615b8dd16332c862d48beed76`
+- Annotated tag `watch7-r17-source-20261111`: resolves to identical HEAD
+- 52 source blobs in remote recursive Git tree
+- No `.aar` or `.apk` blobs in pushed tree
+- Repository visibility: **Public** (as created by the user; not changed here)
+- Exact matching Driver source code commit remains
+  `666d48552cb36b6526e8090ff5fd9a52c24344f8`
