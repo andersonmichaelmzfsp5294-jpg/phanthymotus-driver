@@ -28,7 +28,11 @@
     "standard_offline_build": "pass",
     "research_offline_build": "pass",
     "companion_archive_verified": true,
-    "watch7_e2e": "not completed"
+    "watch7_e2e": "not completed",
+    "restored_standard_build": "pass",
+    "restored_research_build": "pass",
+    "restored_git_bundle_checkout": "pass",
+    "bitwise_debug_apk_equivalence": "not established (debug APK SHA differs)"
   },
   "notes": "Driver is in personal fork; full Android source Git history and archives exist locally. A separate private GitHub repository has not been created or pushed."
 }

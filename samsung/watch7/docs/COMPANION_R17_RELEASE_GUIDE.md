@@ -34,3 +34,21 @@ cloud-backed until a private remote is created and its tag/commit verified.
 **Acceptance:** Driver 80 local tests passed; the new advanced Watch7
 sensor data has not all completed real Watch7 → Driver → Agent Core
 end-to-end verification. Company PR #500 was not changed.
+
+## Restored clean checkout verification
+
+A fresh local clone was created **from the archived Git bundle** at Companion
+`41ebd0fd99271a0615b8dd16332c862d48beed76`. Both Standard and Research
+flavors compiled from this restored source using locally installed JDK 17,
+Android SDK 36, cached Gradle 8.13, pinned dependency lock and the separately
+provided checksum-matching Samsung research SDK.
+
+- Restored Standard: **PASS**
+- Restored Research: **PASS**
+- Source ZIP SHA-256 and Git bundle SHA-256: **PASS**
+- Bitwise identical debug APKs: **NOT CLAIMED** (rebuild SHA differs)
+
+Detailed local-only evidence:
+`../archive/watch7-r17-source-20261111/RESTORE_BUILD_VERIFICATION.json`.
+This evidence doesn't establish any of the 17 sensors' physical Watch7 or
+Agent Core/Bumi end-to-end functionality.
