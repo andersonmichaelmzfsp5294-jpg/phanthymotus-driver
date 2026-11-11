@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "release_id": "watch7-r17-source-20261111",
+  "driver": {
+    "repository": "andersonmichaelmzfsp5294-jpg/phanthymotus-driver",
+    "commit": "666d48552cb36b6526e8090ff5fd9a52c24344f8",
+    "card_count": 17,
+    "path": "samsung/watch7"
+  },
+  "companion": {
+    "local_repository": "heart-rate-wear-test",
+    "local_commit": "73d04d964bbf2bdca6ddfa49fcbd4e6bbab4ac64",
+    "local_tag": "watch7-r17-source-20261111",
+    "remote_repository": null,
+    "source_count": 52,
+    "variants": [
+      "standard",
+      "research"
+    ],
+    "source_archive_sha256": "d52f67d4995d244cc2b31b0c212e6ca9f786cac3e7ee4882419df87a3da91749",
+    "git_bundle_sha256": "adedbd392461f867743933c7a9d715b988b6c6aabe57627e010bf1d22cd02c6a",
+    "dependency_lock": "app/gradle.lockfile",
+    "proprietary_samsung_aar": "not in archive"
+  },
+  "source_validation": {
+    "driver_pytest": "80 passed",
+    "standard_offline_build": "pass",
+    "research_offline_build": "pass",
+    "companion_archive_verified": true,
+    "watch7_e2e": "not completed"
+  },
+  "notes": "Driver is in personal fork; full Android source Git history and archives exist locally. A separate private GitHub repository has not been created or pushed."
+}
